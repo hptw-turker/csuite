@@ -926,3 +926,107 @@ Bu ekranın yayımlanan route tarafından gerçekten okunabildiği §4.9'da öl�
 "İkisini de ekledim" bilgisi geldiğinde (≤ 60 sn içinde etkili olur) doğrulanacak:
 geçerli gönderimin kaydedilmesi, eksik/geçersiz doğrulamada kayıt oluşmaması, bildirim
 aktivasyonunun üretilmesi. Kodda değişiklik ve yeni dağıtım gerekmiyor.
+
+## 20. Word revizyonlarının kaynaktan doğrulanması ve production yayını (13 Eylül 2026, 16:05–16:30 UTC)
+
+### 20.1 Belgelerin yeniden okunması
+
+Her iki `.docx` sıfırdan, önceki tespitler varsayılmadan okundu. `pandoc` bu ortamda
+yok; dosyalar ZIP olarak açılıp `word/document.xml` doğrudan ayrıştırıldı (paragraflar,
+tablolar, `w:rPr` biçim bilgisi). Bulgular:
+
+- Renk kodu: `EE0000` (kırmızı, çoğu üstü çizili) = **eski**, `00B050` (yeşil) = **önerilen yeni**.
+- Sarı vurgulu "Sayfa 1…6" = tek sayfanın bölüm işaretleri (yeni sayfa talebi yok).
+- **`word/comments.xml` iki dosyada da yok** → Word yorumu bulunmuyor; tüm talepler gövdede.
+- İzlenen değişiklik yok (`w:ins` = 0, `w:del` = 0).
+
+Talep-talep karşılaştırma tablosu: `docs/11-word-revize-kontrol-listesi.md`
+(İşveren 26 madde, Aday 22 madde). **Uygulanmamış talep yok.** Belgelerdeki dört açık
+yazım/noktalama hatası düzeltilerek uygulandı (aynı dosyada listelendi).
+
+### 20.2 Gerçek tarayıcıda görünüm doğrulaması
+
+`tools/revize-kontrol2.mjs` (yerel kaynak) ve `tools/canli-kontrol.mjs` (canlı adres),
+Chromium 1194, masaüstü 1440×900 ve mobil 390×844, İşveren ve Aday. Her görünümde
+sekme **emp → cand → emp → hedef** sırasıyla gezilerek bayat metin arandı.
+
+| Ölçüm | masaüstü/İşveren | masaüstü/Aday | mobil/İşveren | mobil/Aday |
+|---|---|---|---|---|
+| Görünür taraf | emp | cand | emp | cand |
+| Diğer tarafın metni (bayat) | yok | yok | yok | yok |
+| Üst düğme etiketi | Ön Görüşme Planlayın | Gizli Görüşme Planlayın | Ön Görüşme Planlayın | Gizli Görüşme Planlayın |
+| Form düğmesi / taraf alanı | Ön görüşme talep edin / İşveren | Gizli görüşme talep edin / Aday | Ön görüşme talep edin / İşveren | Gizli görüşme talep edin / Aday |
+| 01-02-03 rengi | `rgb(255,255,255)` | `rgb(255,255,255)` | `rgb(255,255,255)` | `rgb(255,255,255)` |
+| Sabit mobil CTA | yok | yok | yok | yok |
+| Yatay taşma (px) | 0 | 0 | 0 | 0 |
+| Kırpılan metin sayısı | 0 | 0 | 0 | 0 |
+| Menü formu örtüyor mu | hayır | hayır | hayır | hayır |
+| İlk iki alan ekranda | evet | evet | evet | evet |
+| Gönder düğmesi | var | var | var | var |
+| JS hatası | 0 | 0 | 0 | 0 |
+
+Ortak bölümler dört görünümde de aynı: süreç başlığı "Hız için dijital altyapı, Karar
+için nitelikli danışman", network/sayaçlar/vurgu/gizlilik blokları tek kaynak.
+Taraf-özel bloklar doğru ayrışıyor: kartlar (İşveren: Doğru Liderle Temas / Kültürel
+Eşleştirme / Kontrollü Süreç Yönetimi · Aday: Tam Gizlilik / Yalnızca Doğru Fırsat /
+Kariyer Ortaklığı), adımlar ve karşılaştırma tablosu satırları.
+
+01-02-03 numaraları ekran görüntüsüyle de incelendi; sarı zeminli 03 dahil üçü de
+beyaz ve okunaklı (`docs` dışı geçici görüntüler oturum klasöründe).
+
+### 20.3 Production yayını
+
+```
+npx wix release -t minor
+√ Uploaded successfully!
+```
+
+- Canlı adres: `https://csuite-headless-csuite04-0f08.wix-site-host.com/`
+- Canlı sayfa, depodaki `public/index.html` ile **bayt bayt aynı** (79 074 bayt, `cmp` ile doğrulandı).
+- Alan adı/DNS/ad sunucusu ayarlarına **dokunulmadı**.
+
+### 20.4 Canlıda tek TEST gönderimi
+
+Gerçek tarayıcıdan, gerçek reCAPTCHA v3 token'ıyla, açıkça TEST etiketli tek gönderim:
+
+- Sayfa yanıtı: "Talebiniz alındı…" (`formmsg ok`)
+- `/api/talep-config` → `{"captcha":{"provider":"recaptcha-v3",…},"yapilandirma":{"siteKey":"secrets-manager","secret":"secrets-manager"}}` — her iki anahtar da **Secrets Manager**'dan okunuyor.
+- `/api/talep` → `{"ok":true,"id":"f8c58fe9-cc8e-49da-84e5-c903fcc4b6f3","notified":true}`
+
+CMS kaydı (geri okundu):
+
+| Alan | Değer |
+|---|---|
+| `_id` | `f8c58fe9-cc8e-49da-84e5-c903fcc4b6f3` |
+| `_createdDate` | 2026-09-13T16:22:12.964Z |
+| `taraf` | İşveren |
+| `adSoyad` | TEST - Yayin Dogrulamasi |
+| `sirket` | TEST |
+| `mesaj` | "TEST GONDERIMI - gercek talep degildir. Etiket: CSUITE-TEST-YAYIN-0913-P1 …" |
+| `captchaDogrulandi` | `true` |
+| `bildirimKabul` | `true` |
+| `bildirimDurumu` | `ACCEPTED` |
+| `bildirimIslemId` | `f54ca9b8-4ba7-403d-ad74-21c57bae11d6` |
+
+Bildirim işlemi (Email Transmissions API ile sorgulandı, elle tetiklenmedi):
+
+```
+status            : PROCESSED
+toRecipients[0]   : csuite04@gmail.com · status SENT · failureReason NONE
+type              : TRANSACTIONAL
+```
+
+**Adlandırma:** `ACCEPTED` = sağlayıcı isteği kabul etti, `PROCESSED`/`SENT` =
+sağlayıcı gönderimi işledi ve çıkışa verdi. **Bunların hiçbiri gelen kutusuna teslim
+edildiği anlamına gelmez**; teslimat yalnızca kutunun kendisinden görülebilir.
+
+Kayıt geri okuması, yalnızca yerel `wix dev` altında çalışan **geçici** bir tanı
+route'uyla yapıldı; bu dosya okuma sonrası silindi ve production'a hiç çıkmadı
+(canlıda `/api/gecici-okuma` → **404**). Mevcut TEST kayıtları silinmedi.
+
+### 20.5 Dokunulmayanlar
+
+CAPTCHA yapılandırması, Secrets Manager, CMS izinleri, form alanları ve zorunluluk
+işaretleri, taraf bilgisi, `/api/talep` sözleşmesi, gönderim sınırı ve otomatik
+e-posta mekanizması bu turda **değiştirilmedi**. Alan adı satın alma, bağlama, DNS ve
+ad sunucusu işlemleri **beklemede**; hiçbiri yapılmadı.
