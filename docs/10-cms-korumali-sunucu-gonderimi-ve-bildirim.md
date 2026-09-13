@@ -824,7 +824,67 @@ Bu değer çalışma anında okunuyor; yeniden dağıtım gerekmez.
 - **Canlı adreste form testi yapılamadı:** aynı nedenle.
 - **reCAPTCHA alan adı kaydı:** Google Console erişimi yok; eklenecek tam adlar §17.5'teki üçü.
 
-## 18. Kurulum adımı (tamamlandı)
+## 18. İçerik ve arayüz revizyonu (13 Eylül 2026, 16:00 UTC)
+
+Kapsam: yalnızca metin ve küçük arayüz düzeltmeleri. Yeni sayfa açılmadı, mimari
+değiştirilmedi; renkler, fontlar, logolar, bölüm düzeni ve animasyonlar korundu.
+CAPTCHA, CMS, sunucu doğrulaması, gönderim sınırı ve bildirim mekanizmasına dokunulmadı.
+
+**Önizleme:** `https://iof2gx-csuite-headless-csuite04-0f08.wix-site-host.com`
+(production'a yayımlanmadı)
+
+### 18.1 Uygulanan değişiklikler
+
+| # | Talep | Durum |
+|---|---|---|
+| 1 | Menü "Neden C-Suite"; üst düğme İşveren/Aday etiketleri | Zaten doğruydu — doğrulandı |
+| 1 | Tekrarlı sabit görüşme çağrısının kaldırılması | **Kaldırıldı** (§18.2) |
+| 1 | Üst düğme forma, sabit menü altında kalmayacak biçimde götürsün | **Yapıldı**: `#navCta` ve `#mnavCta` artık `#formTop`'a gidiyor; form kartına `scroll-margin-top:32px` eklendi (html'deki `scroll-padding-top:60px` ile toplam 92 px) |
+| 2, 3 | İşveren/Aday giriş metinleri | Zaten nihai metindeydi — doğrulandı |
+| 4 | İşveren değer önerisi; 01 kartı başlığı | **01 başlığı** "İlana Başvurmayan Liderler" → **"Doğru Liderle Temas"**; diğerleri zaten nihai metindeydi |
+| 4, 5 | 01–02–03 numaraları beyaz | **Yapıldı**: `.ai` rengi `rgba(255,255,255,.4)` → `#fff`; 3. karta özel `.55` istisnası kaldırıldı. Kart yapısı değişmedi |
+| 5 | Aday kart başlıkları; 02'de "getiririz" → "sunarız" | Zaten nihai metindeydi — doğrulandı |
+| 6 | Network bölümü, 4 istatistik kartı, vurgu metni | Zaten nihai metindeydi; sayılar değiştirilmedi, yeni istatistik eklenmedi |
+| 7 | Süreç başlığı | **Yapıldı**: "…, karar için nitelikli danışman." → "…, **Karar için nitelikli danışman**" (büyük K, sondaki nokta kaldırıldı) |
+| 8, 9 | İşveren/Aday süreç adımları | Zaten nihai metindeydi; "3-5 aday" ifadesi yok |
+| 10, 11 | Karşılaştırma tabloları | Zaten nihai metindeydi |
+| 12 | Gizlilik bölümü dört madde | Zaten nihai metindeydi |
+
+### 18.2 Kaldırılan tekrarlı görüşme çağrısı
+
+**Sayfanın en altına sabitlenen mobil CTA çubuğu**: `<div class="mcta" id="mcta">` içindeki
+"Ön görüşme planlayın / Gizli görüşme talep edin" düğmesi. Ekranın altına yapışık duruyor ve
+üstteki görüşme düğmesini tekrarlıyordu (yalnızca ≤680 px genişlikte görünürdü).
+Birlikte kaldırılanlar: `.mcta` CSS blokları, `body.menu-open .mcta` kuralı, `syncForm`
+içindeki `mctaText` satırları ve kaydırmaya bağlı `tickSticky` mantığı.
+Formun gönderme düğmesine ve bölüm içi diğer bağlantılara dokunulmadı.
+
+### 18.3 Kontroller
+
+Masaüstü 1440×900 ve mobil 390×844, İşveren ve Aday için (form **gönderilmedi**):
+
+| Görünüm | nav yük. | form kartı üst | etiket üst | ilk alan üst | menü örtüyor mu | yatay taşma | kesik metin | düğme çakışma | sabit CTA | JS hata |
+|---|---|---|---|---|---|---|---|---|---|---|
+| masaüstü/İşveren | 60 | 68 | 107 | 134 | hayır | 0 | 0 | yok | yok | 0 |
+| masaüstü/Aday | 60 | 68 | 107 | 134 | hayır | 0 | 0 | yok | yok | 0 |
+| mobil/İşveren | 63 | 68 | 97 | 124 | hayır | 0 | 0 | yok | yok | 0 |
+| mobil/Aday | 63 | 68 | 97 | 124 | hayır | 0 | 0 | yok | yok | 0 |
+
+İşveren → Aday → İşveren gidiş-dönüşünde bölüm metinleri **değişmedi**; JavaScript yalnızca
+tasarım gereği üst düğme etiketini ve form etiket/yer tutucularını güncelliyor.
+
+### 18.4 Dokunulmayanlar
+
+Form alanları, zorunlulukları, taraf bilgisi, API sözleşmesi ve bildirim alıcısı aynı
+(`git diff` gönderim mantığında tek satır değişiklik içermiyor). Secrets Manager ve reCAPTCHA
+ayarları değiştirilmedi; domain çalışmasına dönülmedi; production yayımlanmadı.
+
+> **Not:** Yeni önizleme konak adı `iof2gx-…` reCAPTCHA anahtarının Domains listesinde
+> **yok**. Bu önizlemede form gönderimi CAPTCHA doğrulamasını geçemez. CAPTCHA kapatılmadı,
+> test anahtarı eklenmedi, doğrulama atlanmadı — metin revizyonunu incelemek için anahtar
+> kurulumu da gerekmiyor.
+
+## 19. Kurulum adımı (tamamlandı)
 
 ### 11.1 Araç erişimi değerlendirildi
 

@@ -19,6 +19,8 @@
   }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html{scroll-behavior:smooth;scroll-padding-top:60px}
+  /* Üstteki görüşme düğmesi doğrudan forma götürür; sabit menü form başlığını örtmesin. */
+  #formTop{scroll-margin-top:32px}
   body{font-family:var(--sans);background:var(--ink);color:var(--white);-webkit-font-smoothing:antialiased;overflow-x:hidden;line-height:1.6}
   a{color:inherit;text-decoration:none}
   .wrap{max-width:1180px;margin:0 auto;padding:0 32px}
@@ -115,8 +117,7 @@
   .art .athumb{height:130px;background:linear-gradient(135deg,var(--red),var(--red-deep));position:relative;overflow:hidden}
   .art:nth-child(2) .athumb{background:linear-gradient(135deg,var(--black-2),var(--black))}
   .art:nth-child(3) .athumb{background:linear-gradient(135deg,var(--yellow),#d99a1f)}
-  .art .athumb .ai{position:absolute;bottom:-14px;right:2px;font-size:92px;font-weight:800;letter-spacing:-2px;color:rgba(255,255,255,.4);line-height:1}
-  .art:nth-child(3) .athumb .ai{color:rgba(255,255,255,.55)}
+  .art .athumb .ai{position:absolute;bottom:-14px;right:2px;font-size:92px;font-weight:800;letter-spacing:-2px;color:#fff;line-height:1}
   .art .abody{padding:26px 24px;flex:1;display:flex;flex-direction:column}
   .art .acat{font-size:11px;font-weight:600;letter-spacing:1.5px;color:var(--yellow);margin-bottom:12px}
   .art h4{font-size:18px;font-weight:600;line-height:1.3;margin-bottom:11px;letter-spacing:-.3px}
@@ -212,12 +213,6 @@
   .foot-bottom .hptw{color:rgba(255,255,255,.5)}
 
   /* mobil sabit CTA */
-  .mcta{position:fixed;left:0;right:0;bottom:0;z-index:70;display:none;padding:12px 16px calc(12px + env(safe-area-inset-bottom));
-    background:linear-gradient(to top,rgba(26,19,15,.97),rgba(26,19,15,.85));backdrop-filter:blur(10px);
-    border-top:1px solid var(--line);transform:translateY(110%);transition:transform .35s ease}
-  .mcta .btn{width:100%;justify-content:center;font-size:15px;padding:15px 24px}
-  .mcta.on{transform:none}
-  @media(max-width:680px){.mcta{display:block}}
 
   /* hamburger + mobil menü */
   .burger{display:none;width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--black-2);cursor:pointer;position:relative;flex:0 0 auto}
@@ -238,7 +233,6 @@
   .mnav .btn{margin-top:30px;justify-content:center}
   .mnav .mnav-meta{margin-top:24px;font-size:13px;color:var(--grey);text-align:center}
   body.menu-open{overflow:hidden}
-  body.menu-open .mcta{transform:translateY(110%)}
 
   /* ——— responsive katmanlar ——— */
   /* tablet (iPad yatay ve altı) */
@@ -304,7 +298,7 @@
       <a href="#surec">Süreç</a>
       <a href="#guven">Gizlilik</a>
     </div>
-    <a href="#iletisim" class="btn btn-primary nav-cta" id="navCta">Ön Görüşme Planlayın <span class="arr">→</span></a>
+    <a href="#formTop" class="btn btn-primary nav-cta" id="navCta">Ön Görüşme Planlayın <span class="arr">→</span></a>
     <button class="burger" id="burger" aria-label="Menü" aria-expanded="false" onclick="toggleMenu()"><span></span><span></span><span></span></button>
   </div>
 </nav>
@@ -315,7 +309,7 @@
   <a class="mlink" href="#network" onclick="toggleMenu(false)">Network</a>
   <a class="mlink" href="#surec" onclick="toggleMenu(false)">Süreç</a>
   <a class="mlink" href="#guven" onclick="toggleMenu(false)">Gizlilik</a>
-  <a href="#iletisim" class="btn btn-primary" id="mnavCta" onclick="toggleMenu(false)">Ön Görüşme Planlayın <span class="arr">→</span></a>
+  <a href="#formTop" class="btn btn-primary" id="mnavCta" onclick="toggleMenu(false)">Ön Görüşme Planlayın <span class="arr">→</span></a>
   <div class="mnav-meta">info@c-suite.com.tr · +90 216 234 13 26</div>
 </div>
 
@@ -382,7 +376,7 @@
           <div class="athumb"><div class="ai">01</div></div>
           <div class="abody">
             <div class="acat">DOĞRUDAN ERİŞİM</div>
-            <h4>İlana Başvurmayan Liderler</h4>
+            <h4>Doğru Liderle Temas</h4>
             <p>En iyi adaylar çoğu zaman aktif iş aramaz. Onlara doğrudan ilişkiyle ve gizlilikle ulaşırız.</p>
           </div>
         </div>
@@ -479,7 +473,7 @@
 <section class="block" id="surec">
   <div class="wrap">
     <div class="sec-eyebrow reveal">Nasıl çalışıyoruz</div>
-    <h2 class="sec-title reveal">Hız için dijital altyapı, <span class="yl">karar için nitelikli danışman.</span></h2>
+    <h2 class="sec-title reveal">Hız için dijital altyapı, <span class="yl">Karar için nitelikli danışman</span></h2>
 
     <!-- İŞVEREN adımları -->
     <div class="persona show" data-persona="emp">
@@ -592,7 +586,7 @@
         </div>
       </div>
 
-      <div class="formcard reveal">
+      <div class="formcard reveal" id="formTop">
         <form id="contactForm">
                     <input type="hidden" name="subject" id="formSubject" value="C-suite · İşveren — Ön görüşme talebi">
                     <input type="hidden" name="taraf" id="formTaraf" value="İşveren">
@@ -659,11 +653,6 @@
   </div>
 </footer>
 
-<!-- Mobil sabit CTA -->
-<div class="mcta" id="mcta">
-  <a href="#iletisim" class="btn btn-primary" id="mctaBtn"><span id="mctaText">Ön görüşme planlayın</span> <span class="arr">→</span></a>
-</div>
-
 <script>
   const API_URL='/api/talep';
 
@@ -687,12 +676,10 @@
     const sirket=document.getElementById('sirket');
     const mesajLabel=document.getElementById('mesajLabel');
     const mesaj=document.getElementById('mesaj');
-    const mctaText=document.getElementById('mctaText');
     if(p==='emp'){
       subj.value='C-suite · İşveren — Ön görüşme talebi';
       taraf.value='İşveren';
       btn.textContent='Ön görüşme talep edin';
-      mctaText.textContent='Ön görüşme planlayın';
       sirketLabel.innerHTML='Şirket <span class="req">*</span>';
       sirket.placeholder='Şirket adı';
       mesajLabel.innerHTML='Aradığınız pozisyon / ihtiyaç <span class="req">*</span>';
@@ -701,7 +688,6 @@
       subj.value='C-suite · Aday — Gizli görüşme talebi';
       taraf.value='Aday';
       btn.textContent='Gizli görüşme talep edin';
-      mctaText.textContent='Gizli görüşme talep edin';
       sirketLabel.innerHTML='Mevcut kurum <span class="req">*</span>';
       sirket.placeholder='Çalıştığınız kurum';
       mesajLabel.innerHTML='Mevcut rolünüz / hedefiniz <span class="req">*</span>';
@@ -830,14 +816,6 @@
       btnText.textContent=original; btn.disabled=false;
     }
   });
-
-  // mobil sabit CTA: hero geçilince görünür, forma yaklaşınca gizlenir
-  const mcta=document.getElementById('mcta');
-  function tickSticky(){
-    const nearForm=scrollY+innerHeight>document.body.scrollHeight-900;
-    mcta.classList.toggle('on',scrollY>560&&!nearForm);
-  }
-  addEventListener('scroll',tickSticky,{passive:true});
 
   // scroll reveal
   const io=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('in')})},{threshold:.12});
