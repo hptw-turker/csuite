@@ -21,7 +21,8 @@ Tanıtım sitesi projesi. Kaynak tasarım tek, kendi kendine yeten bir HTML dosy
 ## Raporlar
 
 - [İş Paketi 1 — Wix Bağlantısı ve Uygulanabilirlik](docs/01-wix-baglanti-ve-uygulanabilirlik.md) ⚠️ *dört sonucu düzeltildi*
-- [İş Paketi 1 Revizyonu — Managed Headless ve Ağ Engeli](docs/02-duzeltme-managed-headless-ve-ag-engeli.md) ← **güncel öneri**
+- [İş Paketi 1 Revizyonu — Managed Headless ve Ağ Engeli](docs/02-duzeltme-managed-headless-ve-ag-engeli.md)
+- [İş Paketi 2 — Bağlantı, Kurulum ve Önizleme](docs/03-wix-baglanti-kurulum-ve-onizleme.md) ← **güncel durum**
 
 ## Testi çalıştırma
 
