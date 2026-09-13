@@ -9,7 +9,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,500&display=swap" rel="stylesheet">
-<script src="https://www.google.com/recaptcha/enterprise.js?render=explicit" async defer></script>
 <style>
   :root{
     --red:#CF051E; --red-deep:#A50418; --yellow:#F8BA3F;
@@ -625,7 +624,6 @@
             <textarea id="mesaj" name="message" placeholder="Kısaca aradığınız liderlik rolünü ve beklentinizi yazın." required></textarea>
           </div>
 
-          <div id="recaptchaBox"></div>
           <button type="submit" class="btn btn-primary" id="formBtn">
             <span id="btnText">Ön görüşme talep edin</span> <span class="arr">→</span>
           </button>
@@ -738,38 +736,11 @@
   }
 
   // iletişim formu -> Web3Forms
-  // --- Wix'in sağladığı anahtarla görünmez reCAPTCHA Enterprise ---
-  const WIX_CAPTCHA_INVISIBLE_KEY="6LdoPaUfAAAAAJphvHoUoOob7mx0KDlXyXlgrx5v";
-  const CAPTCHA_TIMEOUT_MS=20000;
-  // Form şemasındaki spamFilterProtectionLevel NONE degilse true olmalidir.
-  const CAPTCHA_REQUIRED=true;
-  let _rcId=null, _rcReadyP=null;
-  function _rcLoaded(){ return typeof grecaptcha!=='undefined' && grecaptcha.enterprise && grecaptcha.enterprise.render; }
-  // Widget sayfa açılırken hazırlanır; gönderim anında beklemek gerekmez.
-  function ensureCaptcha(){
-    if(_rcReadyP) return _rcReadyP;
-    _rcReadyP=(async()=>{
-      for(let i=0;i<60 && !_rcLoaded();i++) await new Promise(r=>setTimeout(r,150));
-      if(!_rcLoaded()) return false;
-      try{ _rcId=grecaptcha.enterprise.render('recaptchaBox',
-             {sitekey:WIX_CAPTCHA_INVISIBLE_KEY,size:'invisible',badge:'bottomright'});
-           return true; }catch(e){ return false; }
-    })();
-    return _rcReadyP;
-  }
-  addEventListener('load',ensureCaptcha);
-  // Token üretimi hiçbir koşulda formu askıda bırakmaz: zaman aşımında null döner.
-  async function getCaptchaToken(){
-    const ok=await ensureCaptcha();
-    if(!ok||_rcId===null) return null;
-    try{ grecaptcha.enterprise.reset(_rcId); }catch(e){}
-    try{
-      return await Promise.race([
-        grecaptcha.enterprise.execute(_rcId),
-        new Promise(r=>setTimeout(()=>r(null),CAPTCHA_TIMEOUT_MS))
-      ]);
-    }catch(e){ return null; }
-  }
+  // NOT: Wix Forms gönderimine captchaToken EKLENMEZ.
+  // Kanıt: Wix'in headless'a açtığı tek anahtar (auth.captchaInvisibleSiteKey) üye
+  // kimlik doğrulama içindir; Forms bu token'ı reddediyor ve HTTP 428 INVALID_CAPTCHA
+  // döndürüyor — spamFilterProtectionLevel NONE iken bile. Token göndermek gönderimi
+  // her koşulda bozar, hiçbir koşulda iyileştirmez.
 
   let lastSubmissionId=null;
   const form=document.getElementById('contactForm');
@@ -785,10 +756,6 @@
     try{
       if(form.botcheck && form.botcheck.checked){ throw new Error("bot"); }
       const vt=await getVisitorToken();
-      const capTok=await getCaptchaToken();
-      if(CAPTCHA_REQUIRED && !capTok){
-        const e=new Error('captcha'); e.code='CAPTCHA'; throw e;   // tokensız gönderme
-      }
       const payload={submission:{formId:WIX_FORM_ID,submissions:{
         first_name:form.first_name.value.trim(),
         company:form.company.value.trim(),
@@ -798,14 +765,17 @@
         taraf:document.getElementById("formTaraf").value
       }}};
       if(!payload.submission.submissions.phone){ delete payload.submission.submissions.phone; }
-      if(capTok){ payload.captchaToken=capTok; }
       const res=await fetch("https://www.wixapis.com/form-submission-service/v4/submissions",{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+vt},
         body:JSON.stringify(payload)
       });
-      const out=await res.json();
-      const sub=res.ok&&out&&out.submission?out.submission:null;
+      const out=await res.json().catch(()=>null);
+      if(!res.ok){
+        const ae=(out&&out.details&&out.details.applicationError)||{};
+        const e=new Error('http'); e.ref=res.status+(ae.code?('/'+ae.code):''); throw e;
+      }
+      const sub=out&&out.submission?out.submission:null;
       if(sub&&sub.id){
         // Kalıcı kayıt yalnızca CONFIRMED ile belgelidir. PENDING'de alanlar
         // korunur; buton kilitli kalarak mükerrer kayıt üretilmesi engellenir.
@@ -832,11 +802,8 @@
       }
     }catch(err){
       msg.className='formmsg err';
-      if(err && err.code==='CAPTCHA'){
-        msg.innerHTML='Güvenlik doğrulaması tamamlanamadı, bu yüzden talebiniz <b>gönderilmedi</b>. Bilgileriniz formda duruyor — lütfen tekrar deneyin. Sorun sürerse <a href="mailto:info@c-suite.com.tr" style="color:#f3b9bf;text-decoration:underline">info@c-suite.com.tr</a> adresine yazın.';
-      }else{
-        msg.innerHTML='Gönderim sırasında bir sorun oluştu. Lütfen tekrar deneyin veya <a href="mailto:info@c-suite.com.tr" style="color:#f3b9bf;text-decoration:underline">info@c-suite.com.tr</a> adresine yazın.';
-      }
+      const ref=(err&&err.ref)?(' <span style="opacity:.65">(Hata ref: '+err.ref+')</span>'):'';
+      msg.innerHTML='Gönderim sırasında bir sorun oluştu. Bilgileriniz formda duruyor — lütfen tekrar deneyin veya <a href="mailto:info@c-suite.com.tr" style="color:#f3b9bf;text-decoration:underline">info@c-suite.com.tr</a> adresine yazın.'+ref;
       btnText.textContent=original;
       btn.disabled=false;          // alanlar korunur, yeniden deneme açık
     }

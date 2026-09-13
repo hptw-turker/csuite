@@ -24,7 +24,8 @@ Tanıtım sitesi projesi. Kaynak tasarım tek, kendi kendine yeten bir HTML dosy
 - [İş Paketi 1 Revizyonu — Managed Headless ve Ağ Engeli](docs/02-duzeltme-managed-headless-ve-ag-engeli.md)
 - [İş Paketi 2 — Bağlantı, Kurulum ve Önizleme](docs/03-wix-baglanti-kurulum-ve-onizleme.md) ⚠️ *üç sonucu düzeltildi*
 - [İş Paketi 2b — Form Kayıt: Kök Neden ve Düzeltme](docs/04-form-kayit-kok-neden-ve-duzeltme.md) ⚠️ *güncellendi*
-- [İş Paketi 2c — Spam, PENDING, Yayın Durumu, Bildirim](docs/05-spam-korumasi-pending-yayin-ve-bildirim.md) ← **güncel durum**
+- [İş Paketi 2c — Spam, PENDING, Yayın Durumu, Bildirim](docs/05-spam-korumasi-pending-yayin-ve-bildirim.md)
+- [İş Paketi 2d — CAPTCHA Uyumsuzluğu ve Düzeltme](docs/06-captcha-uyumsuzlugu-ve-duzeltme.md) ← **güncel durum**
 
 ## Testi çalıştırma
 
