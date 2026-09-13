@@ -709,7 +709,45 @@ açılarak ve **gerçek reCAPTCHA tokenı** üretilerek:
 **`yw5i9k-csuite-headless-csuite04-0f08.wix-site-host.com`** — bu tam konak adının Google
 reCAPTCHA anahtarının **Domains** listesine eklenmesi gerekir.
 
-## 16. Kurulum adımı (tamamlandı)
+## 16. Sabitlenen sürüm — yayına hazır (13 Eylül 2026, 15:25 UTC)
+
+### 16.1 Sabitleme
+
+| | |
+|---|---|
+| **Önizleme adresi** | `https://yw5i9k-csuite-headless-csuite04-0f08.wix-site-host.com` |
+| **Kod** | `claude/wix-connection-feasibility-nlol4q` dalı, commit **`884b287`** |
+| **reCAPTCHA Domains kaydı** | `yw5i9k-csuite-headless-csuite04-0f08.wix-site-host.com` — **yetkili** (ölçüldü) |
+
+> Not: Bu ortamın git vekili **etiket (tag) gönderimini reddediyor** (`send-pack: unexpected
+> disconnect`), bu yüzden sürüm bir etiketle değil **commit numarasıyla** sabitlenmiştir.
+
+### 16.2 Son sürümün doğrulaması (kullanıcıdan yeni test istenmeden)
+
+Gerçek Chromium, tüm ağ trafiği gerçek internete yönlendirilerek, sayfa kendi adresinden
+açılıp **gerçek reCAPTCHA tokenı** üretilerek — 15:21:50Z:
+
+| Kontrol | Sonuç |
+|---|---|
+| Hostname yetkisi | reCAPTCHA doğrulaması **geçti** → konak adı anahtarda kayıtlı |
+| CMS kaydı | `b685fae1-c15a-4db3-85b8-0218d8cdcda7` · taraf **İşveren** · **telefon boş kabul edildi** · `kaynak: web` |
+| CAPTCHA | `captchaDogrulandi: true` (success + action + hostname + tazelik + puan) |
+| Otomatik bildirim | `bildirimKabul: true` · `bildirimDurumu: ACCEPTED` · `bildirimIslemId: 1f044172-7af7-4920-9ea1-787ab49307d8` — **elle tetiklenmedi** |
+| Sağlayıcı durumu | **`PROCESSED`** · alıcı **csuite04@gmail.com** → **`SENT`** · `failureReason: NONE` |
+| Konu | `C-suite · Yeni görüşme talebi — İşveren · Turker Bas` |
+| Sayfa | Yayımlanan baytlar yerel dosyayla **aynı MD5** |
+| Tasarım | masaüstü/mobil, İşveren/Aday → **%0.0000** piksel farkı |
+| Tanı uçları | `yerel-*`, `adm`, `diag`, `verify`, `sm-probe` → hepsi **404** |
+| `GET /api/talep` | **405** `{"error":"METHOD_NOT_ALLOWED","ref":…}` |
+| Eski formun anonim yolu | anonim gönderim **400 `DISABLED_FORM_ERROR`** — kapalı |
+| CMS izinleri | `insert/update/remove/read` = **ADMIN** |
+
+### 16.3 Yapılmayanlar
+
+`wix release` çalıştırılmadı, alan adı/DNS değiştirilmedi, ücretli hizmet satın alınmadı,
+CMS kayıtları silinmedi.
+
+## 17. Kurulum adımı (tamamlandı)
 
 ### 11.1 Araç erişimi değerlendirildi
 
