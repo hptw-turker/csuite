@@ -1,3 +1,18 @@
+> ## ⚠️ BU RAPORUN DÖRT SONUCU DÜZELTİLMİŞTİR
+>
+> Bkz. **[02-duzeltme-managed-headless-ve-ag-engeli.md](02-duzeltme-managed-headless-ve-ag-engeli.md)**.
+> Özetle geçersiz olanlar:
+> 1. "Wix CLI'de site yayımlama komutu yok" — **YANLIŞ.** `wix publish` / `wix preview` / `wix dev`
+>    komutları bir Wix proje dizininde mevcuttur (doğrudan testle kanıtlandı).
+> 2. "Birebir sadakat için tek yol Premium + alan adı" — **GERİ ÇEKİLDİ** (kanıtı yoktu).
+> 3. "iframe yolunda Web3Forms zorunlu" — **GERİ ÇEKİLDİ.** Saf statik ön yüz Wix Forms'a
+>    doğrudan gönderim yapabilir.
+> 4. "Yerel Wix öğeleri + Velo" önerisi — **ARTIK ÖNERİLMİYOR.** Yerine Managed Headless
+>    `connect` + statik HTML.
+>
+> Bölüm 5 (dosya analizi) ve Bölüm 6 (yerel render testleri) geçerliliğini korur —
+> ancak Bölüm 6'nın form teslimatını doğrulamadığına dikkat edin (02, Bölüm 4).
+
 # İş Paketi 1 — Wix Bağlantısı ve Uygulanabilirlik Raporu
 
 **Tarih:** 2026-09-13
