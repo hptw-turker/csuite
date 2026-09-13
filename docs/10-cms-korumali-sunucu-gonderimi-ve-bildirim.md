@@ -747,7 +747,84 @@ açılıp **gerçek reCAPTCHA tokenı** üretilerek — 15:21:50Z:
 `wix release` çalıştırılmadı, alan adı/DNS değiştirilmedi, ücretli hizmet satın alınmadı,
 CMS kayıtları silinmedi.
 
-## 17. Kurulum adımı (tamamlandı)
+## 17. Production yayını ve c-suite.com.tr bağlantısı (13 Eylül 2026, 15:35 UTC)
+
+### 17.1 Yayın yapıldı
+
+`wix release` (minor) çalıştırıldı. Yayımlanan kod: dal
+`claude/wix-connection-feasibility-nlol4q`, çalışan sürüm **`884b287`** (dal başı `0d43d35`
+yalnızca belge). Üretim adresi:
+
+**`https://csuite-headless-csuite04-0f08.wix-site-host.com`**
+
+Üretim kontrolü: sayfa baytları yerel dosyayla **aynı MD5**, TLS geçerli,
+`/api/talep-config` iki anahtarı da **secrets-manager**'dan okuyor,
+`GET /api/talep` → 405, tanı uçlarının hepsi **404**, CAPTCHA'sız gönderim
+**403 `CAPTCHA_TOKEN_YOK`**. Tasarım, form, CMS ve bildirim mekanizması değiştirilmedi.
+
+### 17.2 Alan adının mevcut durumu — kayıt altına alındı
+
+| Ölçüm | Sonuç |
+|---|---|
+| `c-suite.com.tr` NS / SOA / A / AAAA / MX / TXT / CNAME | **SERVFAIL** (Google DNS ve Cloudflare DNS, DNSSEC doğrulaması kapalıyken de) |
+| `www.c-suite.com.tr` A | **SERVFAIL** |
+| `https://c-suite.com.tr` | bağlanılamadı |
+| Üst bölge `com.tr` NS | NOERROR (çözülüyor — ölçüm yolu sağlam) |
+| Wix'in kayıt bulucu yanıtı | registrar `OTHER`, ad sunucuları **`ns1.ihsdnsx28.com`, `ns2.ihsdnsx28.com`** |
+| Bu ad sunucularının kendi A kayıtları | NOERROR — `94.138.202.100`, `94.138.202.101` (sunucular var) |
+| Referans kontrol `pointing.wixdns.net` | NOERROR (ölçüm yolu sağlam) |
+
+**Sonuç:** alan adı IHS ad sunucularına delege edilmiş ancak **bölge yanıt vermiyor**.
+Bu nedenle şu anda alan adında çalışan bir site yok ve **MX, SPF, DKIM, DMARC dâhil hiçbir
+kayıt okunamıyor**. Okunamayan kayıtlar "yok" sayılmadı; korunmaları için seçilen bağlantı
+yöntemi bunu zaten garanti ediyor (aşağıya bakınız).
+
+### 17.3 Wix tarafında bağlantı kuruldu
+
+`POST /domains/v1/connected-domains` ile (hesap düzeyi jetonla, belgelenmiş uç):
+
+| | |
+|---|---|
+| Alan adı | `c-suite.com.tr` |
+| Bağlantı türü | **POINTING** — *Wix DNS'i yönetmez; yalnızca site için gereken kayıtlar değişir, MX/SPF/DKIM/DMARC ve diğer kayıtlar olduğu gibi kalır* |
+| Atama | **PRIMARY**, site `72b257e3-0db0-4579-8795-64e51b3f42a6` |
+| DNS yayılımı | `UNKNOWN` (kayıtlar henüz eklenmedi) |
+
+NAMESERVERS yöntemi **bilerek seçilmedi**: bölge yönetimini Wix'e taşırdı ve okunamayan
+e-posta kayıtlarının kaybolma riski doğururdu.
+
+### 17.4 Wix'in verdiği kesin DNS kayıtları (tahmin değil)
+
+`GET /domains/v1/connected-domain-setup-info/c-suite.com.tr` yanıtı:
+
+| Tür | Ana ad | TTL | Değer |
+|---|---|---|---|
+| **A** | `c-suite.com.tr` | 3600 | **`185.230.63.107`** |
+| **CNAME** | `www.c-suite.com.tr` | 3600 | **`pointing.wixdns.net`** |
+
+Ana adres **`c-suite.com.tr`**; `www` bu iki kayıtla Wix tarafından ana adrese yönlendirilir.
+Başka hiçbir kayıt değiştirilmemelidir.
+
+### 17.5 Sunucu tarafı hazırlığı (yayından önce yapıldı)
+
+`RECAPTCHA_ALLOWED_HOSTS` Wix Secrets Manager'a yazıldı — **tam konak adları**, ortak Wix ana
+alan adı **eklenmedi**:
+
+```
+csuite-headless-csuite04-0f08.wix-site-host.com,c-suite.com.tr,www.c-suite.com.tr
+```
+
+Bu değer çalışma anında okunuyor; yeniden dağıtım gerekmez.
+
+### 17.6 Tamamlanamayanlar ve nedenleri
+
+- **DNS kayıtlarını ben ekleyemiyorum:** bölge IHS ad sunucularında; bu oturumda o sağlayıcının
+  yönetim erişimi yok. Değerler tahmin edilmedi, Wix'ten alındı (§17.4).
+- **HTTPS doğrulaması yapılamadı:** alan adı çözülmediği için sertifika süreci başlamadı.
+- **Canlı adreste form testi yapılamadı:** aynı nedenle.
+- **reCAPTCHA alan adı kaydı:** Google Console erişimi yok; eklenecek tam adlar §17.5'teki üçü.
+
+## 18. Kurulum adımı (tamamlandı)
 
 ### 11.1 Araç erişimi değerlendirildi
 
