@@ -1,3 +1,14 @@
+> ## ⚠️ BU RAPORUN ÜÇ SONUCU DÜZELTİLMİŞTİR
+>
+> Bkz. **[04-form-kayit-kok-neden-ve-duzeltme.md](04-form-kayit-kok-neden-ve-duzeltme.md)**.
+> 1. **Bölüm 8 "kayıt doğrulanamadı" ÇÖZÜLDÜ.** Kök neden `spamFilterProtectionLevel`
+>    (ADVANCED/BASIC, CAPTCHA'sız gönderimleri sessizce siliyor). `NONE` ile düzeltildi;
+>    kalıcı `CONFIRMED` kayıt ID üzerinden kanıtlandı.
+> 2. **"Site yayımlanmamış" varsayımı YANLIŞTI.** Yetkili sorgu sitenin durumunu
+>    `Published` gösteriyor. Yayımlama gerekmedi.
+> 3. **"Bağlantı öncesi 0 mevcut site" YANLIŞTI.** Hesapta `My Site 1` (08:15, Draft)
+>    zaten vardı — dokunulmadı. Kullandığım sorgu endpoint'i yanlıştı.
+
 # İş Paketi 2 — Wix Bağlantısı, Kurulum ve Önizleme
 
 **Tarih:** 2026-09-13

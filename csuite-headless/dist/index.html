@@ -736,12 +736,14 @@
   }
 
   // iletişim formu -> Web3Forms
+  let lastSubmissionId=null;
   const form=document.getElementById('contactForm');
   form.addEventListener('submit', async (e)=>{
     e.preventDefault();
     const btn=document.getElementById('formBtn');
     const msg=document.getElementById('formMsg');
     const btnText=document.getElementById('btnText');
+    if(lastSubmissionId){ return; }   // mükerrer kayıt koruması
     const original=btnText.textContent;
     msg.className='formmsg'; msg.textContent='';
     btn.disabled=true; btnText.textContent='Gönderiliyor…';
@@ -763,12 +765,19 @@
         body:JSON.stringify(payload)
       });
       const out=await res.json();
-      if(res.ok && out && out.submission && out.submission.id){
-        form.reset();
+      const sub=res.ok&&out&&out.submission?out.submission:null;
+      if(sub&&sub.id){
+        // Kalıcı kayıt yalnızca CONFIRMED ile belgelidir. PENDING'de alanlar
+        // korunur; buton kilitli kalarak mükerrer kayıt üretilmesi engellenir.
+        lastSubmissionId=sub.id;
         msg.className='formmsg ok';
         msg.textContent='Talebiniz alındı. En kısa sürede, gizlilik içinde sizinle iletişime geçeceğiz.';
         btnText.textContent='Gönderildi ✓';
-        setTimeout(()=>{btnText.textContent=original;btn.disabled=false},4000);
+        if(sub.status==='CONFIRMED'){
+          form.reset(); syncForm(document.getElementById('tab-cand').classList.contains('active')?'cand':'emp');
+          setTimeout(()=>{btnText.textContent=original;btn.disabled=false;lastSubmissionId=null},4000);
+        }
+        // PENDING / PAYMENT_WAITING: reset yok, buton kilitli kalır.
       }else{
         throw new Error((out&&out.message)||'Gönderilemedi');
       }
