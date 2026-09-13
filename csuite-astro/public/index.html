@@ -769,6 +769,15 @@
     btn.disabled=true; btnText.textContent='Gönderiliyor…';
     const mail='<a href="mailto:info@c-suite.com.tr" style="color:#f3b9bf;text-decoration:underline">info@c-suite.com.tr</a>';
     try{
+      // Güvenlik doğrulaması sağlayıcı kuruluyken token üretemezse sunucuya hiç gidilmez;
+      // kullanıcıya sebebi açıkça söylenir, bilgileri formda kalır.
+      const tok=await captchaToken().catch(()=>'');
+      if(CAPTCHA && !tok){
+        msg.className='formmsg err';
+        msg.innerHTML='Güvenlik doğrulaması tarayıcınızda yüklenemedi, bu yüzden talebiniz <b>gönderilmedi</b>. Bilgileriniz formda duruyor — sayfayı yenileyip tekrar deneyin veya '+mail+' adresine yazın. <span style="opacity:.65">(Hata ref: CAPTCHA_YUKLENEMEDI)</span>';
+        btnText.textContent=original; btn.disabled=false;
+        return;
+      }
       const res=await fetch(API_URL,{
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
@@ -779,7 +788,7 @@
           mesaj:form['Mesaj'].value.trim(),
           taraf:document.getElementById('formTaraf').value,
           botcheck:(form.botcheck&&form.botcheck.checked)?'1':'',
-          captchaToken:await captchaToken().catch(()=>'')
+          captchaToken:tok
         })
       });
       const out=await res.json().catch(()=>null);
@@ -794,11 +803,17 @@
         setTimeout(()=>{btnText.textContent=original;btn.disabled=false},4000);
         return;
       }
-      const code=(out&&out.error)||('HTTP'+res.status);
+      // Kod her zaman dizeye çevrilir; sunucunun kısa ref'i ve HTTP durumu da eklenir,
+      // böylece ekranda görünen referans tek başına teşhis edilebilir olur.
+      const rawCode=(out&&typeof out.error==='string'&&out.error)?out.error:('HTTP'+res.status);
+      const code=rawCode;
+      const ref=rawCode+'/'+res.status+((out&&out.ref)?('/'+out.ref):'');
       msg.className='formmsg err';
       if(code==='RATE_LIMIT'){
         const m=(out&&out.retryAfterMinutes)||15;
         msg.innerHTML='Kısa sürede çok fazla talep gönderildi. Lütfen '+m+' dakika sonra tekrar deneyin veya '+mail+' adresine yazın.';
+      }else if(code==='CAPTCHA_TOKEN_YOK'){
+        msg.innerHTML='Güvenlik doğrulaması tamamlanamadığı için talebiniz <b>gönderilmedi</b>. Bilgileriniz formda duruyor — sayfayı yenileyip tekrar deneyin.';
       }else if(code==='CAPTCHA'){
         msg.innerHTML='Güvenlik doğrulaması tamamlanamadı, bu yüzden talebiniz <b>gönderilmedi</b>. Bilgileriniz formda duruyor — lütfen sayfayı yenileyip tekrar deneyin.';
       }else if(code==='CAPTCHA_NOT_CONFIGURED'){
@@ -806,7 +821,7 @@
       }else if(code==='VALIDATION'){
         msg.innerHTML='Lütfen zorunlu alanları eksiksiz ve doğru doldurun.';
       }else{
-        msg.innerHTML='Gönderim sırasında bir sorun oluştu. Bilgileriniz formda duruyor — lütfen tekrar deneyin veya '+mail+' adresine yazın. <span style="opacity:.65">(Hata ref: '+code+')</span>';
+        msg.innerHTML='Gönderim sırasında bir sorun oluştu. Bilgileriniz formda duruyor — lütfen tekrar deneyin veya '+mail+' adresine yazın. <span style="opacity:.65">(Hata ref: '+ref+')</span>';
       }
       btnText.textContent=original; btn.disabled=false;   // alanlar korunur, yeniden deneme açık
     }catch(err){

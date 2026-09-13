@@ -194,34 +194,44 @@ const json = (body: unknown, status: number) =>
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   });
 
-export const POST: APIRoute = async ({ request }) => {
+/** Kişisel veri ve jeton içermeyen kısa hata referansı. */
+const yeniRef = () => crypto.randomUUID().slice(0, 8);
+
+/**
+ * Hata yanıtı sözleşmesi: `error` HER ZAMAN bir dizedir (sayısal kod değil),
+ * `ref` kısa ve kişisel veri içermez. Böylece arayüzdeki "Hata ref" değeri
+ * her koşulda anlamlıdır ve destek tarafında izlenebilir.
+ */
+const hata = (kod: string, status: number, ek?: Record<string, unknown>) =>
+  json({ error: kod, ref: yeniRef(), ...(ek ?? {}) }, status);
+
+const postHandler = async (request: Request): Promise<Response> => {
   let body: Record<string, unknown>;
   try {
     body = await request.json();
   } catch {
-    return json({ error: 'BAD_JSON' }, 400);
+    return hata('BAD_JSON', 400);
   }
 
   // 1) honeypot
-  if (s(body.botcheck, 10)) return json({ error: 'REJECTED' }, 400);
+  if (s(body.botcheck, 10)) return hata('REJECTED', 400);
 
   // 2) alan doğrulama
   const { data, errors } = validate(body);
-  if (errors.length) return json({ error: 'VALIDATION', fields: errors }, 400);
+  if (errors.length) return hata('VALIDATION', 400, { fields: errors });
 
   // 3) süreli gönderim sınırı
   const key = await submitterKey(request);
   if (await overLimit(key, data.eposta.toLowerCase())) {
-    return json({ error: 'RATE_LIMIT', retryAfterMinutes: Math.ceil(WINDOW_MS / 60000) }, 429);
+    return hata('RATE_LIMIT', 429, { retryAfterMinutes: Math.ceil(WINDOW_MS / 60000) });
   }
 
   // 4) CAPTCHA — geçmezse hiçbir kayıt oluşturulmaz. Yapılandırma eksikse de reddedilir;
   //    sessiz kabul (fail-open) bırakılmaz.
   const cap = await captchaOk(s(body.captchaToken, 5000), request);
   if (!cap.ok) {
-    return cap.reason === 'NOT_CONFIGURED'
-      ? json({ error: 'CAPTCHA_NOT_CONFIGURED' }, 503)
-      : json({ error: 'CAPTCHA' }, 403);
+    if (cap.reason === 'NOT_CONFIGURED') return hata('CAPTCHA_NOT_CONFIGURED', 503);
+    return hata(cap.reason === 'MISSING_TOKEN' ? 'CAPTCHA_TOKEN_YOK' : 'CAPTCHA', 403);
   }
 
   // 5) kalıcı kayıt
@@ -240,7 +250,7 @@ export const POST: APIRoute = async ({ request }) => {
     itemId = (created as { _id?: string })?._id ?? '';
     if (!itemId) throw new Error('no id');
   } catch {
-    return json({ error: 'STORE_FAILED' }, 502);
+    return hata('STORE_FAILED', 502);
   }
 
   // 6) bildirim — kayıttan BAĞIMSIZ ele alınır. Bildirim başarısız olsa bile kullanıcıya
@@ -267,6 +277,20 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   return json({ ok: true, id: itemId, notified: sonuc.kabul }, 200);
+};
+
+/**
+ * Beklenmeyen bir istisna hiçbir zaman anlamsız bir 4xx'e dönüşmesin:
+ * her durumda dize kodlu, kişisel veri içermeyen bir yanıt döner.
+ * Kayıt oluştuktan SONRA yapılan işler (bildirim, kayda yazma) zaten kendi
+ * try/catch'lerinde; bu sarmalayıcı onların sonucunu değiştirmez.
+ */
+export const POST: APIRoute = async ({ request }) => {
+  try {
+    return await postHandler(request);
+  } catch {
+    return hata('SERVER_ERROR', 500);
+  }
 };
 
 /**
@@ -349,4 +373,4 @@ async function notify(data: Record<string, string>, itemId: string): Promise<Not
   return { kabul: Boolean(t?.id), islemId: t?.id ?? '', durum: t?.status ?? 'UNKNOWN' };
 }
 
-export const GET: APIRoute = async () => json({ error: 'METHOD_NOT_ALLOWED' }, 405);
+export const GET: APIRoute = async () => hata('METHOD_NOT_ALLOWED', 405);

@@ -641,7 +641,75 @@ okuyor; sayfa baytları yerel dosyayla aynı; tanı uçları yok (hepsi 404); CA
 **403** ile reddediliyor. CMS izinleri, tasarım ve eski formun **devre dışı** durumu korundu.
 Kullanılmayan iki otomasyon (`7bc07c88-…`, `b727e976-…`) **INACTIVE** bırakıldı.
 
-## 15. Kurulum adımı (tamamlandı)
+## 15. R7 testindeki 400 hatası — inceleme ve sağlamlaştırma (13 Eylül 2026, 15:00–15:15 UTC)
+
+### 15.1 R7 kaydı oluşmadı
+
+`CSUITE-TEST-FINAL-0913-R7` etiketi CMS'te **yok**; koleksiyon toplamı denemeden önceki
+değerinde kaldı. Yani istek **CMS yazımından önce** düştü. Bu nedenle yeniden gönderim
+yapılmadı, elle bildirim tetiklenmedi ve bildirim katmanı bu hataya karışmıyor
+(bildirim yalnızca kayıt oluştuktan sonra, ayrı `try/catch` içinde çalışır).
+
+### 15.2 Elenen nedenler (ölçümle)
+
+| Olası neden | Ölçüm | Sonuç |
+|---|---|---|
+| Alan doğrulaması | R7'deki **birebir aynı** değerlerle (telefon **boş** ve telefon alanı **hiç yokken**) yayımlanan uca istek | İkisi de **403 `CAPTCHA`** — yani doğrulama aşamasını geçti, 400 üretmedi |
+| İsteğe bağlı boş telefon | aynı ölçüm | Sorun değil |
+| Honeypot | kod yolu `REJECTED` döndürür | Gönderimde honeypot boştu; ayrıca referans farklı olurdu |
+| CMS | CMS hatası `502 STORE_FAILED` döndürür ve hiç insert denenmemiş | Değil |
+| Bildirim | kayıttan sonra çalışır, kayıt yok | Değil |
+| Ön yüz ↔ route sözleşmesi | Sayfanın gönderdiği alan adları (`adSoyad, sirket, eposta, telefon, mesaj, taraf, botcheck, captchaToken`) route'un okuduklarıyla birebir aynı; ayrıca **gerçek tarayıcıda** aynı dağıtımda başarılı gönderim yapıldı (kayıt `7764f854-…`) | Uyumlu |
+| Tarayıcı konsolundaki 400 | URL yakalandı: `https://www.google.com/recaptcha/api2/clr` — reCAPTCHA'nın kendi telemetri çağrısı; **başarılı** gönderimlerde de görülüyor | İlgisiz |
+
+### 15.3 Geriye kalan tek 400 kaynağı
+
+Route yalnızca üç durumda 400 döndürür: `BAD_JSON` (gövde okunamadı/boş), `REJECTED`
+(honeypot), `VALIDATION`. İkincisi ve üçüncüsü elendi. Kullanıcının gördüğü referansta bir
+hata **kodu** değil çıplak bir sayı görünmesi, yanıtın ya gövdesiz/JSON olmayan bir 400
+olduğunu ya da `BAD_JSON` olduğunu gösteriyor. **Aynı dağıtımda, gerçek tarayıcıda, gerçek
+reCAPTCHA tokenıyla yapılan tekrar denemesi başarılı olduğu için hata yeniden üretilemedi.**
+Bu yüzden tek bir kesin neden iddia edilmiyor; bunun yerine hem belirsizliği ortadan kaldıran
+hem de sessiz başarısızlığı engelleyen düzeltmeler yapıldı.
+
+### 15.4 Yapılan düzeltmeler
+
+**Sunucu**
+- Her hata yanıtı artık **dize** bir `error` kodu ve kişisel veri/jeton içermeyen kısa bir
+  `ref` taşıyor. Çıplak sayı görünmesi mümkün değil.
+- Tüm istek işleyicisi bir yakalayıcıyla sarıldı: beklenmeyen istisna artık anlamsız bir 4xx'e
+  değil, `SERVER_ERROR` (500) koduna dönüşüyor. Kayıt oluştuktan sonraki adımlar (bildirim,
+  kayda yazma) zaten kendi `try/catch`'lerinde; bu sarmalayıcı onların sonucunu değiştirmiyor.
+- Eksik token ile başarısız doğrulama ayrıldı: `CAPTCHA_TOKEN_YOK` / `CAPTCHA`.
+
+**Ön yüz**
+- Sağlayıcı kuruluyken token üretilemezse **sunucuya hiç gidilmiyor**; kullanıcıya
+  "güvenlik doğrulaması yüklenemedi, sayfayı yenileyin" deniyor, alanlar korunuyor
+  (`CAPTCHA_YUKLENEMEDI`).
+- Hata referansı artık her koşulda anlamlı: `<kod>/<HTTP durumu>/<sunucu ref>`.
+- `CAPTCHA_TOKEN_YOK` için ayrı, anlaşılır mesaj.
+
+Tasarım, CAPTCHA yapılandırması ve CMS izinleri değişmedi.
+
+### 15.5 Doğrulama (kendim yaptım)
+
+Gerçek Chromium, tüm ağ trafiği gerçek internete yönlendirilerek, sayfa **kendi adresinden**
+açılarak ve **gerçek reCAPTCHA tokenı** üretilerek:
+
+| Senaryo | Sonuç |
+|---|---|
+| Başarılı gönderim (önceki dağıtımda, aynı başarı yolu) | Kayıt **`7764f854-a8b9-42b4-b206-be0b60fbd90e`**, `captchaDogrulandi: true`, `bildirimKabul: true`, `bildirimDurumu: ACCEPTED`, `bildirimIslemId: 502de96b-…` |
+| Aynı gönderimin **otomatik** bildirimi | İşlem `502de96b-…` → sağlayıcı **`PROCESSED`**, alıcı **`csuite04@gmail.com`** → **`SENT`**, `failureReason: NONE`, konu `C-suite · Yeni görüşme talebi — İşveren · Turker Bas` (elle tetiklenmedi) |
+| Google'a kayıtlı olmayan konakta gönderim | **403 `CAPTCHA`** + ref, anlaşılır mesaj, **alanlar korundu** — yani hata yolu da doğru |
+| Tasarım | masaüstü/mobil, İşveren/Aday → **%0.0000** piksel farkı |
+| Alan doğrulaması | R7'nin birebir değerleriyle CAPTCHA aşamasına ulaşıyor |
+
+### 15.6 Yeni önizleme
+
+**`yw5i9k-csuite-headless-csuite04-0f08.wix-site-host.com`** — bu tam konak adının Google
+reCAPTCHA anahtarının **Domains** listesine eklenmesi gerekir.
+
+## 16. Kurulum adımı (tamamlandı)
 
 ### 11.1 Araç erişimi değerlendirildi
 
