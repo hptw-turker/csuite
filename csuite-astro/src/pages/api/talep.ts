@@ -96,32 +96,89 @@ function validate(b: Record<string, unknown>) {
 }
 
 /**
- * CAPTCHA sunucuda doğrulanır. Gizli anahtar tanımlı değilse sağlayıcı henüz
- * kurulmamış demektir (configured=false) ve kayıt CAPTCHA'sız olarak işaretlenir.
- * Anahtar tanımlıysa doğrulama BAŞARISIZ olduğunda Wix'e kayıt gönderilmez.
+ * CAPTCHA — reCAPTCHA **v3 (score based / classic)**, sunucuda doğrulanır.
+ *
+ * Sözleşme (Google reCAPTCHA v3):
+ *   tarayıcı : api.js?render=<SITE_KEY> → grecaptcha.execute(SITE_KEY, {action: 'talep'})
+ *   sunucu   : POST https://www.google.com/recaptcha/api/siteverify
+ *              gövde: secret=<SECRET_KEY>&response=<token>
+ *              yanıt: { success, score, action, challenge_ts, hostname, "error-codes" }
+ *
+ * Uygulanan denetimler — hepsi geçmezse kayıt OLUŞMAZ:
+ *   1) success === true                     → token geçerli ve daha önce kullanılmamış
+ *   2) action === 'talep'                   → başka bir sayfadan alınan token tekrar kullanılamaz
+ *   3) hostname izinli listede              → çalınan site anahtarı başka alan adında işe yaramaz
+ *   4) challenge_ts tazeliği ≤ 2 dk         → eski token tekrar oynatılamaz (v3 tokenı zaten 2 dk yaşar)
+ *   5) score ≥ eşik (öntanımlı 0.5)         → v3 puan denetimi
+ *
+ * `remoteip` BİLEREK gönderilmez: ziyaretçinin IP'si üçüncü tarafa aktarılmaz;
+ * alan isteğe bağlıdır ve puanlama onsuz da çalışır.
+ *
+ * Yapılandırma eksikse (anahtar çifti yoksa) istek REDDEDİLİR — sessizce kabul edilmez.
  */
-async function captchaOk(token: string): Promise<{ ok: boolean; configured: boolean }> {
+const CAPTCHA_ACTION = 'talep';
+const DEFAULT_SCORE_THRESHOLD = 0.5;
+const MAX_TOKEN_AGE_MS = 2 * 60 * 1000;
+
+/** Öntanımlı izinli alan adları: Wix'in önizleme/yayın konakları. Ek alan adı env ile eklenir. */
+const DEFAULT_HOSTS = ['wix-site-host.com', 'wixsite.com'];
+
+function hostAllowed(hostname: string): boolean {
+  if (!hostname) return false;
+  const extra = (getSecret('RECAPTCHA_ALLOWED_HOSTS') ?? '')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+  const allow = [...DEFAULT_HOSTS, ...extra];
+  const h = hostname.toLowerCase();
+  return allow.some((a) => h === a || h.endsWith(`.${a}`));
+}
+
+type CaptchaResult = { ok: boolean; reason?: 'NOT_CONFIGURED' | 'MISSING_TOKEN' | 'INVALID' };
+
+async function captchaOk(token: string): Promise<CaptchaResult> {
   // Sağlayıcı ancak ÇİFT tanımlıysa kuruludur: site anahtarı tarayıcıya verilir
-  // (/api/talep-config), gizli anahtar yalnızca burada kullanılır. Tek başına gizli
-  // anahtar tanımlanırsa tarayıcı token üretemeyeceği için form tamamen kilitlenirdi.
+  // (/api/talep-config), gizli anahtar yalnızca burada kullanılır.
   const secret = getSecret('RECAPTCHA_SECRET_KEY');
   const siteKey = getSecret('RECAPTCHA_SITE_KEY');
-  if (!secret || !siteKey) return { ok: true, configured: false };
-  if (!token) return { ok: false, configured: true };
+  if (!secret || !siteKey) return { ok: false, reason: 'NOT_CONFIGURED' };
+  if (!token) return { ok: false, reason: 'MISSING_TOKEN' };
+
+  let j: {
+    success?: boolean;
+    score?: number;
+    action?: string;
+    challenge_ts?: string;
+    hostname?: string;
+  };
   try {
     const r = await fetch('https://www.google.com/recaptcha/api/siteverify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ secret, response: token }),
     });
-    const j = (await r.json()) as { success?: boolean; score?: number };
-    if (j?.success !== true) return { ok: false, configured: true };
-    // v3 puanı varsa eşik uygulanır; v2 yanıtlarında score alanı bulunmaz.
-    if (typeof j.score === 'number' && j.score < 0.5) return { ok: false, configured: true };
-    return { ok: true, configured: true };
+    if (!r.ok) return { ok: false, reason: 'INVALID' };
+    j = await r.json();
   } catch {
-    return { ok: false, configured: true };
+    return { ok: false, reason: 'INVALID' };
   }
+
+  if (j?.success !== true) return { ok: false, reason: 'INVALID' };
+  if (j.action !== CAPTCHA_ACTION) return { ok: false, reason: 'INVALID' };
+  if (!hostAllowed(j.hostname ?? '')) return { ok: false, reason: 'INVALID' };
+
+  const ts = Date.parse(j.challenge_ts ?? '');
+  if (!Number.isFinite(ts) || Date.now() - ts > MAX_TOKEN_AGE_MS) {
+    return { ok: false, reason: 'INVALID' };
+  }
+
+  const thresholdRaw = Number(getSecret('RECAPTCHA_MIN_SCORE'));
+  const threshold = Number.isFinite(thresholdRaw) && thresholdRaw > 0 && thresholdRaw <= 1
+    ? thresholdRaw
+    : DEFAULT_SCORE_THRESHOLD;
+  if (typeof j.score !== 'number' || j.score < threshold) return { ok: false, reason: 'INVALID' };
+
+  return { ok: true };
 }
 
 const json = (body: unknown, status: number) =>
@@ -151,9 +208,14 @@ export const POST: APIRoute = async ({ request }) => {
     return json({ error: 'RATE_LIMIT', retryAfterMinutes: Math.ceil(WINDOW_MS / 60000) }, 429);
   }
 
-  // 4) CAPTCHA — başarısızsa hiçbir kayıt oluşturulmaz
+  // 4) CAPTCHA — geçmezse hiçbir kayıt oluşturulmaz. Yapılandırma eksikse de reddedilir;
+  //    sessiz kabul (fail-open) bırakılmaz.
   const cap = await captchaOk(s(body.captchaToken, 5000));
-  if (!cap.ok) return json({ error: 'CAPTCHA' }, 403);
+  if (!cap.ok) {
+    return cap.reason === 'NOT_CONFIGURED'
+      ? json({ error: 'CAPTCHA_NOT_CONFIGURED' }, 503)
+      : json({ error: 'CAPTCHA' }, 403);
+  }
 
   // 5) kalıcı kayıt
   let itemId = '';
@@ -165,7 +227,7 @@ export const POST: APIRoute = async ({ request }) => {
       epostaKey: data.eposta.toLowerCase(),
       kaynak: 'web',
       gonderenOzet: key,
-      captchaDogrulandi: cap.configured,
+      captchaDogrulandi: true, // bu noktaya yalnızca doğrulama geçtiyse gelinir
     });
     itemId = (created as { _id?: string })?._id ?? '';
     if (!itemId) throw new Error('no id');

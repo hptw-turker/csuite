@@ -114,38 +114,91 @@ yüzden **kalıcı depoya** dayanır: pencere içinde `gonderenOzet` ve normalle
 
 ---
 
-## 4. CAPTCHA — sunucuda doğrulama
+## 4. CAPTCHA — durum ve yapılan testlerin gerçek koşulları
 
-- Site anahtarı ve gizli anahtar **yalnızca Wix sunucu ortam değişkenlerinde** tutulur
-  (`wix env set`). `astro:env/server` → `getSecret()` ile çalışma anında okunur.
-  Depoda, `.env.local`'de veya istemci paketinde **gizli anahtar yoktur**
-  (`dist/` içinde yalnızca değişken *adı* geçer, değeri geçmez).
-- Tarayıcı, site anahtarını `GET /api/talep-config` ucundan alır. Bu uç **gizli anahtarı asla
-  döndürmez**; sağlayıcı kurulu değilse `{"captcha": null}` döner ve sayfa hiçbir betik yüklemez
-  (tasarım aynen kalır).
-- Sağlayıcı yalnızca **iki anahtar da** tanımlıysa etkin sayılır. Tek başına gizli anahtar
-  tanımlanırsa tarayıcı token üretemeyeceği için form kilitlenirdi; bu durum kodda engellenmiştir.
-- **Doğrulama başarısızsa Wix'e kayıt gönderilmez.**
+### 4.1 Testler hangi yapılandırmada alındı (düzeltme)
 
-### Ölçüm — yayımlanan önizleme üzerinde
+Önceki raporda "CAPTCHA testleri geçti" satırı, hangi anahtarla alındığını yeterince
+belirtmiyordu. Kesin durum:
 
-| Yapılandırma | İstek | Sonuç | Koleksiyon |
+| Test | Kullanılan gizli anahtar | Doğrulama nasıl yapıldı | Sonuç |
 |---|---|---|---|
-| Gizli anahtar geçersiz | uydurma token | **403** `CAPTCHA` | kayıt sayısı **12 → 12** (değişmedi) |
-| Google'ın yayımlanmış test anahtar çifti | token gönderildi | **200**, kayıt oluştu | **12 → 13** |
-| Google'ın test gizli anahtarı | token **yok** | **403** `CAPTCHA` | değişmedi |
+| Geçersiz doğrulama | **Bilerek geçersiz** bir dize (`GECERSIZ-TEST-…`) | **Gerçek** `google.com/recaptcha/api/siteverify` çağrısı; Google `success:false` döndürdü | 403, kayıt oluşmadı |
+| Token yok | Google'ın **yayımlanmış test gizli anahtarı** | Google'a hiç gidilmedi (token boş olduğu için route zaten reddediyor) | 403, kayıt oluşmadı |
+| Geçerli doğrulama | Google'ın **yayımlanmış test gizli anahtarı** (`6LeIxAcT…`) | **Gerçek** siteverify çağrısı; test anahtarı **her tokena** `success:true`, `hostname:"testkey.google.com"` döndürür | 200, kayıt oluştu |
 
-> Test anahtarları Google'ın belgelediği herkese açık test çiftidir; doğrulama turu bittikten
-> sonra ortamdan kaldırılmıştır. Şu anki durumda sağlayıcı **kurulu değil**
-> (`/api/talep-config` → `{"captcha": null}`), kayıtlarda `captchaDogrulandi: false` görünür.
+- **Taklit (mock) yanıt kullanılmadı**; her seferinde gerçek Google ucu çağrıldı.
+- Ancak **gerçek sağlayıcı doğrulaması da yapılmadı**: kullanılan anahtar çifti Google'ın
+  belgelediği, herkese açık **test** çiftidir ve her tokenı geçerli sayar. Yani "geçerli
+  doğrulama" testi, sözleşmenin ve kod yolunun çalıştığını gösterir; **gerçek bir bot/insan
+  ayrımının çalıştığını göstermez.**
+- Bu testler, C-suite hesabına ait **hiçbir gerçek reCAPTCHA anahtarıyla** yapılmamıştır.
 
-### Ölçüm — ortam değişkeni ne zaman etkili olur
+### 4.2 Güncel önizlemenin durumu — açıkça
+
+Doğrulama turundan sonra test anahtarları ortamdan kaldırıldı. Bu yüzden **son yayımlanan
+önizlemede CAPTCHA koruması YOKTUR**:
+
+- `GET /api/talep-config` → `{"captcha": null}`
+- Anahtar tanımlı olmadığı için **gönderim CAPTCHA olmadan kabul edilir** ve kayıt oluşur
+  (`captchaDogrulandi: false`).
+- Bu durum **"CAPTCHA koruması etkin" olarak raporlanmamalıdır.** Şu an etkin olan koruma
+  yalnızca: honeypot + alan doğrulama + süreli gönderim sınırı.
+
+### 4.3 Kodun beklediği sözleşme (kesinleştirildi)
+
+- **Tür/sürüm:** Google reCAPTCHA **v3 — "Score based (v3)"**, klasik reCAPTCHA
+  (**Enterprise değil**, Cloud projesi gerekmez).
+- **Tarayıcı:** `https://www.google.com/recaptcha/api.js?render=<SITE_KEY>` →
+  `grecaptcha.execute(SITE_KEY, { action: 'talep' })`.
+- **Sunucu:** `POST https://www.google.com/recaptcha/api/siteverify`,
+  gövde `secret=<SECRET_KEY>&response=<token>`.
+  Yanıt: `success`, `score`, `action`, `challenge_ts`, `hostname`, `error-codes`.
+- **`remoteip` gönderilmez** — ziyaretçinin IP'si üçüncü tarafa aktarılmaz (alan isteğe bağlı).
+
+### 4.4 Sunucuda uygulanan denetimler (bu pakette eklendi)
+
+Aşağıdakilerin **hepsi** geçmezse kayıt oluşmaz:
+
+1. `success === true` — token geçerli ve daha önce kullanılmamış.
+2. `action === 'talep'` — başka bir sayfadan/eylemden alınan token kabul edilmez.
+3. `hostname` izinli listede — öntanımlı `wix-site-host.com`, `wixsite.com`
+   (ve alt alan adları); ek alan adları `RECAPTCHA_ALLOWED_HOSTS` ile eklenir.
+   Böylece çalınan site anahtarı başka bir alan adında işe yaramaz.
+4. `challenge_ts` tazeliği ≤ 2 dakika — eski token tekrar oynatılamaz.
+5. `score ≥ eşik` — öntanımlı 0.5, `RECAPTCHA_MIN_SCORE` ile değiştirilebilir.
+
+### 4.5 Artık fail-open yok
+
+Önceki davranış: anahtar tanımlı değilse gönderim sessizce kabul ediliyordu.
+**Kaldırıldı.** Yeni davranış:
+
+| Durum | Yanıt | Kayıt |
+|---|---|---|
+| Anahtar çifti tanımlı değil | **503 `CAPTCHA_NOT_CONFIGURED`** | oluşmaz |
+| Token yok / geçersiz / action, hostname, tazelik veya puan denetimi başarısız | **403 `CAPTCHA`** | oluşmaz |
+
+Her iki durumda da kullanıcıya anlaşılır Türkçe hata gösterilir, **form alanları korunur** ve
+buton yeniden denemeye açık kalır. Test amaçlı hiçbir atlatma (bypass) kodda bırakılmamıştır.
+
+### 4.6 Sağlayıcı kurulunca görünürlük
+
+Sağlayıcı kurulu olmadığı sürece sayfa **hiçbir reCAPTCHA betiği yüklemez** ve tasarım birebir
+aynı kalır (ölçüldü: masaüstü/mobil, İşveren/Aday → %0.0000 piksel farkı). Kurulduğunda
+reCAPTCHA v3 görünmez çalışır; yüzen rozet gizlenir ve Google'ın zorunlu kıldığı kısa atıf
+metni, formun **zaten var olan** açıklama satırının altına eklenir (düzeni değiştirmez).
+
+### 4.7 Ortam değişkeni ne zaman etkili olur (ölçüldü)
 
 Değişken değiştirildikten sonra **çalışan dağıtım eski değeri görmeye devam ediyor**; yeni değer
-ancak **yeni bir `wix preview` / `wix release`** ile etkili oluyor. (Değer değiştirilip aynı
-dağıtım sorgulandı: eski değer döndü.)
+ancak **yeni bir `wix preview` / `wix release`** ile etkili oluyor.
 
----
+### 4.8 Wix'in kendi CAPTCHA'sı neden kullanılamıyor
+
+Wix'in `POST /captcharator/api/v1/authorize` ucu resmî belgesinde açıkça
+*"works with the Wix reCAPTCHA element … If you're developing a Wix site or a Blocks app"*
+diyor. Bu, Velo/`$w` ön yüz bileşenine bağlıdır; Wix Managed Headless'ta sunduğumuz statik
+sayfada böyle bir bileşen yoktur. Bu yüzden Google reCAPTCHA v3 seçildi.
 
 ## 5. Bildirim
 
@@ -264,9 +317,47 @@ Diğer uçlar: `GET /api/talep` → **405**, honeypot dolu → **400 `REJECTED`*
 - Ek CRM entegrasyonu kurulmadı; üyelik, kullanıcı paneli, ödeme, aday havuzu eklenmedi.
 - Eski TEST kayıtları silinmedi.
 
-## 11. Ürün sahibinden beklenen tek adım
+## 11. Kurulumu tamamlamak için gereken tek adım
 
-reCAPTCHA anahtarları Google hesabı gerektirir; bu yüzden onları **yalnızca ürün sahibi**
-oluşturabilir. Anahtarlar hazır olduğunda ikisi de sunucu ortamına yazılır
-(`RECAPTCHA_SITE_KEY`, `RECAPTCHA_SECRET_KEY`) ve **yeni bir önizleme alınır** — kodda
-değişiklik gerekmez; route CAPTCHA'yı o anda zorunlu kılmaya başlar.
+### 11.1 Araç erişimi değerlendirildi
+
+Bu oturumda kullanılabilir bağlayıcılar tarandı: **Google Drive (yalnızca dosya işlemleri),
+GitHub, Claude Code Remote**. reCAPTCHA/Google Cloud yönetim aracı **yok**; `wix` MCP sunucusu
+da yetkilendirilmemiş durumda. Wix CLI oturumu site ortam değişkenlerini yazabiliyor
+(`wix env set`) ama Google tarafında anahtar **oluşturamıyor**. Bu yüzden anahtar üretimi
+ürün sahibinin Google oturumunu gerektiriyor — bu, araç erişimi denetlendikten sonra varılan
+bir sonuçtur.
+
+### 11.2 Anahtarları oluşturma
+
+1. Google hesabıyla aç: **https://www.google.com/recaptcha/admin/create**
+2. **Label:** `C-suite` (serbest)
+3. **reCAPTCHA type:** **Challenge yok → "Score based (v3)"** seçilecek.
+   (v2, Enterprise veya "Challenge (v2)" **seçilmemeli**; kod v3 sözleşmesini uygular.)
+4. **Domains** — şu an bağlı bir production alan adı **yok**, bu yüzden yalnızca önizleme
+   konağı eklenecek:
+   - `wix-site-host.com`
+   
+   (reCAPTCHA alt alan adlarını kendiliğinden kapsar; her `wix preview` yeni bir alt alan adı
+   ürettiği için tek tek eklemek işe yaramaz.) Alan adı ileride bağlanınca aynı ekrana
+   eklenir; sunucu tarafında `RECAPTCHA_ALLOWED_HOSTS` ile izinli listeye yazılır.
+5. Şartları kabul edip **Submit**. Ekranda iki anahtar çıkar: **Site key** ve **Secret key**.
+
+### 11.3 Anahtarları güvenli şekilde yerleştirme (sohbete yazılmayacak)
+
+Wix'in desteklediği ekran kullanılacak — terminal gerekmez:
+
+1. Headless proje panosunu aç:
+   `https://manage.wix.com/dashboard/72b257e3-0db0-4579-8795-64e51b3f42a6`
+2. **Developer Tools › Secrets Manager › Add Secret**
+3. İki gizli değer eklenecek (adlar birebir):
+   - `RECAPTCHA_SITE_KEY` → Google'daki **Site key**
+   - `RECAPTCHA_SECRET_KEY` → Google'daki **Secret key**
+
+Secret key sohbete yazılmamalı, ekran görüntüsüyle paylaşılmamalı ve depoya konmamalıdır.
+
+### 11.4 Sonrası
+
+Anahtarlar tanımlandığı bilgisi geldiğinde yeni önizleme oluşturulacak ve şunlar doğrulanacak:
+geçerli gönderimin kaydedilmesi, eksik/geçersiz doğrulamada kayıt oluşmaması, bildirim
+aktivasyonunun üretilmesi. Kodda değişiklik gerekmiyor.

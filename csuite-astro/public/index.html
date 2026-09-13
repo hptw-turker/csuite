@@ -726,18 +726,31 @@
   // iletişim formu -> /api/talep (Wix Managed Headless sunucu route'u)
   // CAPTCHA: yapılandırma sunucudan okunur. Sağlayıcı kurulu değilse hiçbir betik
   // yüklenmez ve sayfa birebir aynı kalır. Kurulu ise reCAPTCHA v3 görünmez çalışır.
+  // Sağlayıcı kurulu değilse hiçbir betik yüklenmez ve sayfa birebir aynı kalır.
+  // Kurulu ise reCAPTCHA v3 görünmez çalışır; rozet gizlenir ve yerine Google'ın
+  // istediği kısa atıf metni, formun zaten var olan açıklama satırına eklenir.
   let CAPTCHA=null, captchaReady=null;
   fetch('/api/talep-config').then(r=>r.json()).then(c=>{
-    if(c&&c.captcha&&c.captcha.siteKey){
-      CAPTCHA=c.captcha;
-      captchaReady=new Promise((res,rej)=>{
-        const sc=document.createElement('script');
-        sc.src='https://www.google.com/recaptcha/api.js?render='+encodeURIComponent(CAPTCHA.siteKey);
-        sc.async=true; sc.defer=true;
-        sc.onload=()=>window.grecaptcha.ready(res); sc.onerror=rej;
-        document.head.appendChild(sc);
-      });
+    if(!(c&&c.captcha&&c.captcha.siteKey)) return;
+    CAPTCHA=c.captcha;
+    const st=document.createElement('style');
+    st.textContent='.grecaptcha-badge{visibility:hidden}';
+    document.head.appendChild(st);
+    const note=document.querySelector('.formcard .formnote');
+    if(note && !note.dataset.rc){
+      note.dataset.rc='1';
+      const a=document.createElement('span');
+      a.style.display='block'; a.style.marginTop='6px';
+      a.innerHTML='Bu form reCAPTCHA ile korunmaktadır; Google <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Gizlilik Politikası</a> ve <a href="https://policies.google.com/terms" target="_blank" rel="noopener">Hizmet Şartları</a> geçerlidir.';
+      note.appendChild(a);
     }
+    captchaReady=new Promise((res,rej)=>{
+      const sc=document.createElement('script');
+      sc.src='https://www.google.com/recaptcha/api.js?render='+encodeURIComponent(CAPTCHA.siteKey);
+      sc.async=true; sc.defer=true;
+      sc.onload=()=>window.grecaptcha.ready(res); sc.onerror=rej;
+      document.head.appendChild(sc);
+    });
   }).catch(()=>{});
   async function captchaToken(){
     if(!CAPTCHA||!captchaReady) return '';
@@ -787,7 +800,9 @@
         const m=(out&&out.retryAfterMinutes)||15;
         msg.innerHTML='Kısa sürede çok fazla talep gönderildi. Lütfen '+m+' dakika sonra tekrar deneyin veya '+mail+' adresine yazın.';
       }else if(code==='CAPTCHA'){
-        msg.innerHTML='Güvenlik doğrulaması tamamlanamadı, bu yüzden talebiniz <b>gönderilmedi</b>. Lütfen sayfayı yenileyip tekrar deneyin.';
+        msg.innerHTML='Güvenlik doğrulaması tamamlanamadı, bu yüzden talebiniz <b>gönderilmedi</b>. Bilgileriniz formda duruyor — lütfen sayfayı yenileyip tekrar deneyin.';
+      }else if(code==='CAPTCHA_NOT_CONFIGURED'){
+        msg.innerHTML='Güvenlik doğrulaması henüz etkinleştirilmediği için talebiniz <b>gönderilmedi</b>. Bilgileriniz formda duruyor. Lütfen kısa süre sonra tekrar deneyin veya '+mail+' adresine yazın.';
       }else if(code==='VALIDATION'){
         msg.innerHTML='Lütfen zorunlu alanları eksiksiz ve doğru doldurun.';
       }else{
