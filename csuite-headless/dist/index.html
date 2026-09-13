@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,500&display=swap" rel="stylesheet">
+<script src="https://www.google.com/recaptcha/enterprise.js?render=explicit" async defer></script>
 <style>
   :root{
     --red:#CF051E; --red-deep:#A50418; --yellow:#F8BA3F;
@@ -624,6 +625,7 @@
             <textarea id="mesaj" name="message" placeholder="Kısaca aradığınız liderlik rolünü ve beklentinizi yazın." required></textarea>
           </div>
 
+          <div id="recaptchaBox"></div>
           <button type="submit" class="btn btn-primary" id="formBtn">
             <span id="btnText">Ön görüşme talep edin</span> <span class="arr">→</span>
           </button>
@@ -736,6 +738,37 @@
   }
 
   // iletişim formu -> Web3Forms
+  // --- Wix'in sağladığı anahtarla görünmez reCAPTCHA Enterprise ---
+  const WIX_CAPTCHA_INVISIBLE_KEY="6LdoPaUfAAAAAJphvHoUoOob7mx0KDlXyXlgrx5v";
+  const CAPTCHA_TIMEOUT_MS=8000;
+  let _rcId=null, _rcReadyP=null;
+  function _rcLoaded(){ return typeof grecaptcha!=='undefined' && grecaptcha.enterprise && grecaptcha.enterprise.render; }
+  // Widget sayfa açılırken hazırlanır; gönderim anında beklemek gerekmez.
+  function ensureCaptcha(){
+    if(_rcReadyP) return _rcReadyP;
+    _rcReadyP=(async()=>{
+      for(let i=0;i<60 && !_rcLoaded();i++) await new Promise(r=>setTimeout(r,150));
+      if(!_rcLoaded()) return false;
+      try{ _rcId=grecaptcha.enterprise.render('recaptchaBox',
+             {sitekey:WIX_CAPTCHA_INVISIBLE_KEY,size:'invisible',badge:'bottomright'});
+           return true; }catch(e){ return false; }
+    })();
+    return _rcReadyP;
+  }
+  addEventListener('load',ensureCaptcha);
+  // Token üretimi hiçbir koşulda formu askıda bırakmaz: zaman aşımında null döner.
+  async function getCaptchaToken(){
+    const ok=await ensureCaptcha();
+    if(!ok||_rcId===null) return null;
+    try{ grecaptcha.enterprise.reset(_rcId); }catch(e){}
+    try{
+      return await Promise.race([
+        grecaptcha.enterprise.execute(_rcId),
+        new Promise(r=>setTimeout(()=>r(null),CAPTCHA_TIMEOUT_MS))
+      ]);
+    }catch(e){ return null; }
+  }
+
   let lastSubmissionId=null;
   const form=document.getElementById('contactForm');
   form.addEventListener('submit', async (e)=>{
@@ -750,6 +783,7 @@
     try{
       if(form.botcheck && form.botcheck.checked){ throw new Error("bot"); }
       const vt=await getVisitorToken();
+      const capTok=await getCaptchaToken();
       const payload={submission:{formId:WIX_FORM_ID,submissions:{
         first_name:form.first_name.value.trim(),
         company:form.company.value.trim(),
@@ -759,6 +793,7 @@
         taraf:document.getElementById("formTaraf").value
       }}};
       if(!payload.submission.submissions.phone){ delete payload.submission.submissions.phone; }
+      if(capTok){ payload.captchaToken=capTok; }
       const res=await fetch("https://www.wixapis.com/form-submission-service/v4/submissions",{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+vt},
@@ -770,14 +805,23 @@
         // Kalıcı kayıt yalnızca CONFIRMED ile belgelidir. PENDING'de alanlar
         // korunur; buton kilitli kalarak mükerrer kayıt üretilmesi engellenir.
         lastSubmissionId=sub.id;
-        msg.className='formmsg ok';
-        msg.textContent='Talebiniz alındı. En kısa sürede, gizlilik içinde sizinle iletişime geçeceğiz.';
         btnText.textContent='Gönderildi ✓';
         if(sub.status==='CONFIRMED'){
+          // Kalıcı kayıt belgelendi: temizle ve yeni talebe izin ver.
+          msg.className='formmsg ok';
+          msg.textContent='Talebiniz alındı. En kısa sürede, gizlilik içinde sizinle iletişime geçeceğiz.';
           form.reset(); syncForm(document.getElementById('tab-cand').classList.contains('active')?'cand':'emp');
           setTimeout(()=>{btnText.textContent=original;btn.disabled=false;lastSubmissionId=null},4000);
+        }else{
+          // PENDING: ziyaretçi gönderimi geri okuyamaz (okuma sahip yetkisi ister).
+          // Alanları koru, durumu açıkça söyle, sınırlı bekleme sonrası yeniden denemeye izin ver.
+          msg.className='formmsg ok';
+          msg.textContent='Talebiniz iletildi, ancak kaydı şu anda doğrulayamıyoruz. Bilgileriniz formda duruyor; bir yanıt almazsanız birkaç saniye sonra tekrar gönderebilir veya info@c-suite.com.tr adresine yazabilirsiniz.';
+          setTimeout(()=>{
+            btnText.textContent=original; btn.disabled=false; lastSubmissionId=null;
+            msg.textContent='Talebiniz iletildi (doğrulanamadı). Tekrar göndermek mükerrer kayıt oluşturabilir.';
+          },15000);
         }
-        // PENDING / PAYMENT_WAITING: reset yok, buton kilitli kalır.
       }else{
         throw new Error((out&&out.message)||'Gönderilemedi');
       }

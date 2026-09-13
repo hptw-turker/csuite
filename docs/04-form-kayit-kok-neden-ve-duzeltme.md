@@ -1,3 +1,16 @@
+> ## ⚠️ BU RAPOR GÜNCELLENDİ
+>
+> Bkz. **[05-spam-korumasi-pending-yayin-ve-bildirim.md](05-spam-korumasi-pending-yayin-ve-bildirim.md)**.
+> 1. `NONE` **nihai çözüm değil.** Nedensellik HTTP 428 ile kanıtlandı; görünmez reCAPTCHA
+>    entegre edildi (görünür bileşen varsayımı yanlıştı). Seviye, gerçek tarayıcıda
+>    doğrulanana kadar `NONE` bırakıldı.
+> 2. **PENDING'de buton artık süresiz kilitlenmiyor** — 15 sn sınırlı bekleme + uyarı.
+>    `lastSubmissionId`'nin sayfa yenileme ve ağ kesintisinde koruma sağlamadığı ölçüldü.
+> 3. **"Published" çelişkisi çözüldü:** production adresi **404**; yalnızca `wix preview`
+>    çalıştırıldı, `wix release` hiç çalıştırılmadı.
+> 4. **Bildirim otomasyonu okundu** (doğru API: `automations-service/v2`): `ACTIVE`, doğru
+>    forma filtreli, alıcı site işbirlikçileri. Teslimat hâlâ doğrulanmadı.
+
 # İş Paketi 2b — Form Kayıt Sorunu: Kök Neden ve Düzeltme
 
 **Tarih:** 2026-09-13
