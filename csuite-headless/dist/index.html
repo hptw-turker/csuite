@@ -740,7 +740,9 @@
   // iletişim formu -> Web3Forms
   // --- Wix'in sağladığı anahtarla görünmez reCAPTCHA Enterprise ---
   const WIX_CAPTCHA_INVISIBLE_KEY="6LdoPaUfAAAAAJphvHoUoOob7mx0KDlXyXlgrx5v";
-  const CAPTCHA_TIMEOUT_MS=8000;
+  const CAPTCHA_TIMEOUT_MS=20000;
+  // Form şemasındaki spamFilterProtectionLevel NONE degilse true olmalidir.
+  const CAPTCHA_REQUIRED=true;
   let _rcId=null, _rcReadyP=null;
   function _rcLoaded(){ return typeof grecaptcha!=='undefined' && grecaptcha.enterprise && grecaptcha.enterprise.render; }
   // Widget sayfa açılırken hazırlanır; gönderim anında beklemek gerekmez.
@@ -784,6 +786,9 @@
       if(form.botcheck && form.botcheck.checked){ throw new Error("bot"); }
       const vt=await getVisitorToken();
       const capTok=await getCaptchaToken();
+      if(CAPTCHA_REQUIRED && !capTok){
+        const e=new Error('captcha'); e.code='CAPTCHA'; throw e;   // tokensız gönderme
+      }
       const payload={submission:{formId:WIX_FORM_ID,submissions:{
         first_name:form.first_name.value.trim(),
         company:form.company.value.trim(),
@@ -827,9 +832,13 @@
       }
     }catch(err){
       msg.className='formmsg err';
-      msg.innerHTML='Gönderim sırasında bir sorun oluştu. Lütfen tekrar deneyin veya <a href="mailto:info@c-suite.com.tr" style="color:#f3b9bf;text-decoration:underline">info@c-suite.com.tr</a> adresine yazın.';
+      if(err && err.code==='CAPTCHA'){
+        msg.innerHTML='Güvenlik doğrulaması tamamlanamadı, bu yüzden talebiniz <b>gönderilmedi</b>. Bilgileriniz formda duruyor — lütfen tekrar deneyin. Sorun sürerse <a href="mailto:info@c-suite.com.tr" style="color:#f3b9bf;text-decoration:underline">info@c-suite.com.tr</a> adresine yazın.';
+      }else{
+        msg.innerHTML='Gönderim sırasında bir sorun oluştu. Lütfen tekrar deneyin veya <a href="mailto:info@c-suite.com.tr" style="color:#f3b9bf;text-decoration:underline">info@c-suite.com.tr</a> adresine yazın.';
+      }
       btnText.textContent=original;
-      btn.disabled=false;
+      btn.disabled=false;          // alanlar korunur, yeniden deneme açık
     }
   });
 
