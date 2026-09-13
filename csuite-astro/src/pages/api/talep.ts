@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { auth, httpClient } from '@wix/essentials';
 import { items } from '@wix/data';
-import { getSecret } from 'astro:env/server';
+import { gizliOku } from '../../lib/gizli';
 
 /**
  * Görüşme talebi alım ucu  —  POST /api/talep
@@ -107,7 +107,7 @@ function validate(b: Record<string, unknown>) {
  * Uygulanan denetimler — hepsi geçmezse kayıt OLUŞMAZ:
  *   1) success === true                     → token geçerli ve daha önce kullanılmamış
  *   2) action === 'talep'                   → başka bir sayfadan alınan token tekrar kullanılamaz
- *   3) hostname izinli listede              → çalınan site anahtarı başka alan adında işe yaramaz
+ *   3) hostname == bu sitenin TAM konak adı  → çalınan site anahtarı başka adreste işe yaramaz
  *   4) challenge_ts tazeliği ≤ 2 dk         → eski token tekrar oynatılamaz (v3 tokenı zaten 2 dk yaşar)
  *   5) score ≥ eşik (öntanımlı 0.5)         → v3 puan denetimi
  *
@@ -120,27 +120,34 @@ const CAPTCHA_ACTION = 'talep';
 const DEFAULT_SCORE_THRESHOLD = 0.5;
 const MAX_TOKEN_AGE_MS = 2 * 60 * 1000;
 
-/** Öntanımlı izinli alan adları: Wix'in önizleme/yayın konakları. Ek alan adı env ile eklenir. */
-const DEFAULT_HOSTS = ['wix-site-host.com', 'wixsite.com'];
-
-function hostAllowed(hostname: string): boolean {
+/**
+ * Hostname izin listesi — **joker yok, ortak ana alan adı yok**.
+ * İzinli olan tek şey: isteğin geldiği bu sitenin TAM konak adı, artı
+ * `RECAPTCHA_ALLOWED_HOSTS` ile açıkça yazılmış TAM konak adları
+ * (virgülle ayrılır; ör. yeni bir önizleme adresi ya da ileride bağlanacak alan adı).
+ * Böylece başka bir Wix sitesinde çözülmüş bir token kabul edilmez.
+ */
+async function hostAllowed(hostname: string, req: Request): Promise<boolean> {
   if (!hostname) return false;
-  const extra = (getSecret('RECAPTCHA_ALLOWED_HOSTS') ?? '')
-    .split(',')
-    .map((h) => h.trim().toLowerCase())
-    .filter(Boolean);
-  const allow = [...DEFAULT_HOSTS, ...extra];
   const h = hostname.toLowerCase();
-  return allow.some((a) => h === a || h.endsWith(`.${a}`));
+
+  const ownHost = (req.headers.get('host') ?? '').split(':')[0].trim().toLowerCase();
+  const extra = (await gizliOku('RECAPTCHA_ALLOWED_HOSTS')).deger
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+
+  const allow = [ownHost, ...extra].filter(Boolean);
+  return allow.includes(h);
 }
 
 type CaptchaResult = { ok: boolean; reason?: 'NOT_CONFIGURED' | 'MISSING_TOKEN' | 'INVALID' };
 
-async function captchaOk(token: string): Promise<CaptchaResult> {
+async function captchaOk(token: string, req: Request): Promise<CaptchaResult> {
   // Sağlayıcı ancak ÇİFT tanımlıysa kuruludur: site anahtarı tarayıcıya verilir
   // (/api/talep-config), gizli anahtar yalnızca burada kullanılır.
-  const secret = getSecret('RECAPTCHA_SECRET_KEY');
-  const siteKey = getSecret('RECAPTCHA_SITE_KEY');
+  const secret = (await gizliOku('RECAPTCHA_SECRET_KEY')).deger;
+  const siteKey = (await gizliOku('RECAPTCHA_SITE_KEY')).deger;
   if (!secret || !siteKey) return { ok: false, reason: 'NOT_CONFIGURED' };
   if (!token) return { ok: false, reason: 'MISSING_TOKEN' };
 
@@ -165,14 +172,14 @@ async function captchaOk(token: string): Promise<CaptchaResult> {
 
   if (j?.success !== true) return { ok: false, reason: 'INVALID' };
   if (j.action !== CAPTCHA_ACTION) return { ok: false, reason: 'INVALID' };
-  if (!hostAllowed(j.hostname ?? '')) return { ok: false, reason: 'INVALID' };
+  if (!(await hostAllowed(j.hostname ?? '', req))) return { ok: false, reason: 'INVALID' };
 
   const ts = Date.parse(j.challenge_ts ?? '');
   if (!Number.isFinite(ts) || Date.now() - ts > MAX_TOKEN_AGE_MS) {
     return { ok: false, reason: 'INVALID' };
   }
 
-  const thresholdRaw = Number(getSecret('RECAPTCHA_MIN_SCORE'));
+  const thresholdRaw = Number((await gizliOku('RECAPTCHA_MIN_SCORE')).deger);
   const threshold = Number.isFinite(thresholdRaw) && thresholdRaw > 0 && thresholdRaw <= 1
     ? thresholdRaw
     : DEFAULT_SCORE_THRESHOLD;
@@ -210,7 +217,7 @@ export const POST: APIRoute = async ({ request }) => {
 
   // 4) CAPTCHA — geçmezse hiçbir kayıt oluşturulmaz. Yapılandırma eksikse de reddedilir;
   //    sessiz kabul (fail-open) bırakılmaz.
-  const cap = await captchaOk(s(body.captchaToken, 5000));
+  const cap = await captchaOk(s(body.captchaToken, 5000), request);
   if (!cap.ok) {
     return cap.reason === 'NOT_CONFIGURED'
       ? json({ error: 'CAPTCHA_NOT_CONFIGURED' }, 503)
@@ -261,7 +268,7 @@ export const POST: APIRoute = async ({ request }) => {
 const NOTIFY_AUTOMATION_ID = 'b727e976-205b-4d68-b004-8eaf16c8f95b';
 
 async function notify(data: Record<string, string>, itemId: string): Promise<boolean> {
-  const siteId = getSecret('WIX_SITE_ID') ?? '72b257e3-0db0-4579-8795-64e51b3f42a6';
+  const siteId = (await gizliOku('WIX_SITE_ID')).deger || '72b257e3-0db0-4579-8795-64e51b3f42a6';
   const kayitBaglantisi = `https://manage.wix.com/dashboard/${siteId}/database/data/${COLLECTION}`;
 
   const submissions = [

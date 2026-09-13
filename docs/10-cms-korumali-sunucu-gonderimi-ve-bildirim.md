@@ -162,9 +162,10 @@ Aşağıdakilerin **hepsi** geçmezse kayıt oluşmaz:
 
 1. `success === true` — token geçerli ve daha önce kullanılmamış.
 2. `action === 'talep'` — başka bir sayfadan/eylemden alınan token kabul edilmez.
-3. `hostname` izinli listede — öntanımlı `wix-site-host.com`, `wixsite.com`
-   (ve alt alan adları); ek alan adları `RECAPTCHA_ALLOWED_HOSTS` ile eklenir.
-   Böylece çalınan site anahtarı başka bir alan adında işe yaramaz.
+3. `hostname` **tam eşleşme** — joker yok, ortak ana alan adı yok. İzinli olan tek şey
+   isteğin geldiği bu sitenin TAM konak adı; ek adresler `RECAPTCHA_ALLOWED_HOSTS`
+   içine **tam konak adı** olarak virgülle yazılır. Böylece başka bir Wix sitesinde
+   çözülmüş token kabul edilmez.
 4. `challenge_ts` tazeliği ≤ 2 dakika — eski token tekrar oynatılamaz.
 5. `score ≥ eşik` — öntanımlı 0.5, `RECAPTCHA_MIN_SCORE` ile değiştirilebilir.
 
@@ -192,6 +193,36 @@ metni, formun **zaten var olan** açıklama satırının altına eklenir (düzen
 
 Değişken değiştirildikten sonra **çalışan dağıtım eski değeri görmeye devam ediyor**; yeni değer
 ancak **yeni bir `wix preview` / `wix release`** ile etkili oluyor.
+
+### 4.9 Anahtarlar nereden okunuyor — Secrets Manager doğrulandı
+
+İki depo aynı şey değildir ve kod ikisini ayrı ele alır:
+
+| Depo | Nasıl okunuyor | Değişiklik ne zaman etkili |
+|---|---|---|
+| **Wix Secrets Manager** (pano) | `auth.elevate(secrets.getSecretValue)(ad)` — `@wix/secrets` | **Çalışma anında** — yeniden dağıtım gerekmez (≤ 60 sn önbellek) |
+| CLI ortam değişkeni (`wix env set`) | `astro:env/server` → `getSecret()` | Yalnızca **yeni dağıtımda** (ölçüldü) |
+
+Sıra: önce Secrets Manager, bulunamazsa ortam değişkeni.
+
+**Erişim kanıtı (gizli değer hiçbir yere yazdırılmadan).** Yayımlanan route'a geçici,
+anahtarla korunmuş bir uç konularak ölçüldü: uç, rastgele bir değerle `CSUITE_SM_PROBE`
+adında bir secret **oluşturdu**, aynı istekte `getSecretValue` ile **geri okudu** ve değerin
+birebir aynı olduğunu **yalnızca doğru/yanlış olarak** bildirdi; ardından secret silindi.
+
+```
+{ "olusturuldu": true, "okundu": true, "degerEslesti": true,
+  "listelenebiliyor": true, "vadidekiAdlar": ["CSUITE_SM_PROBE"] }
+…ikinci çağrı: { "silindi": true, "silmeSonrasiAdlar": [] }
+```
+
+Secret çalışma anında oluşturulup aynı anda okunabildiği için, **panodan eklenen değer de
+çalışan dağıtım tarafından görülür** — bu yüzden anahtarlar girildikten sonra yeni bir
+önizleme almak gerekmez ve **önizleme adresi değişmez.** Doğrulama ucu kaldırıldı; son
+önizlemede `404` dönüyor.
+
+Sürekli kullanılabilen, değer sızdırmayan kontrol: `GET /api/talep-config` →
+`{"yapilandirma":{"siteKey":"secrets-manager|env|null","secret":"secrets-manager|env|null"}}`.
 
 ### 4.8 Wix'in kendi CAPTCHA'sı neden kullanılamıyor
 
@@ -321,43 +352,41 @@ Diğer uçlar: `GET /api/talep` → **405**, honeypot dolu → **400 `REJECTED`*
 
 ### 11.1 Araç erişimi değerlendirildi
 
-Bu oturumda kullanılabilir bağlayıcılar tarandı: **Google Drive (yalnızca dosya işlemleri),
-GitHub, Claude Code Remote**. reCAPTCHA/Google Cloud yönetim aracı **yok**; `wix` MCP sunucusu
-da yetkilendirilmemiş durumda. Wix CLI oturumu site ortam değişkenlerini yazabiliyor
-(`wix env set`) ama Google tarafında anahtar **oluşturamıyor**. Bu yüzden anahtar üretimi
-ürün sahibinin Google oturumunu gerektiriyor — bu, araç erişimi denetlendikten sonra varılan
-bir sonuçtur.
+Bu oturumdaki bağlayıcılar tarandı: **Google Drive (yalnızca dosya), GitHub, Claude Code
+Remote**. reCAPTCHA/Google Cloud yönetim aracı **yok**; `wix` MCP sunucusu yetkilendirilmemiş.
+Wix CLI oturumu site ortam değişkeni yazabiliyor ama Google tarafında anahtar **üretemiyor**.
+Bu yüzden anahtar üretimi ürün sahibinin Google oturumunu gerektiriyor — araç erişimi
+denetlendikten sonra varılan sonuç.
 
 ### 11.2 Anahtarları oluşturma
 
-1. Google hesabıyla aç: **https://www.google.com/recaptcha/admin/create**
-2. **Label:** `C-suite` (serbest)
-3. **reCAPTCHA type:** **Challenge yok → "Score based (v3)"** seçilecek.
-   (v2, Enterprise veya "Challenge (v2)" **seçilmemeli**; kod v3 sözleşmesini uygular.)
-4. **Domains** — şu an bağlı bir production alan adı **yok**, bu yüzden yalnızca önizleme
-   konağı eklenecek:
-   - `wix-site-host.com`
-   
-   (reCAPTCHA alt alan adlarını kendiliğinden kapsar; her `wix preview` yeni bir alt alan adı
-   ürettiği için tek tek eklemek işe yaramaz.) Alan adı ileride bağlanınca aynı ekrana
-   eklenir; sunucu tarafında `RECAPTCHA_ALLOWED_HOSTS` ile izinli listeye yazılır.
-5. Şartları kabul edip **Submit**. Ekranda iki anahtar çıkar: **Site key** ve **Secret key**.
+1. https://www.google.com/recaptcha/admin/create
+2. **Label:** `C-suite`
+3. **reCAPTCHA type:** **Score based (v3)** — v2 veya Enterprise değil.
+4. **Domains:** ortak ana alan adı **kullanılmayacak**. Yalnızca şu **tam konak adı**:
 
-### 11.3 Anahtarları güvenli şekilde yerleştirme (sohbete yazılmayacak)
+   ```
+   zbhson-csuite-headless-csuite04-0f08.wix-site-host.com
+   ```
 
-Wix'in desteklediği ekran kullanılacak — terminal gerekmez:
+   Bu adres, anahtarlar panodan girildiğinde **değişmez** (§4.9: panodan eklenen secret
+   çalışan dağıtımca okunuyor, yeniden dağıtım gerekmiyor). İleride yeni bir dağıtım
+   adresi ya da bağlanan bir alan adı olursa aynı ekrana eklenir ve sunucuda
+   `RECAPTCHA_ALLOWED_HOSTS` içine tam konak adı olarak yazılır.
+5. Submit → **Site key** ve **Secret key**.
 
-1. Headless proje panosunu aç:
-   `https://manage.wix.com/dashboard/72b257e3-0db0-4579-8795-64e51b3f42a6`
+### 11.3 Anahtarları güvenli ekrana girme (terminal yok, sohbete yazılmaz)
+
+1. `https://manage.wix.com/dashboard/72b257e3-0db0-4579-8795-64e51b3f42a6`
 2. **Developer Tools › Secrets Manager › Add Secret**
-3. İki gizli değer eklenecek (adlar birebir):
-   - `RECAPTCHA_SITE_KEY` → Google'daki **Site key**
-   - `RECAPTCHA_SECRET_KEY` → Google'daki **Secret key**
+3. Adlar birebir:
+   - `RECAPTCHA_SITE_KEY` → Site key
+   - `RECAPTCHA_SECRET_KEY` → Secret key
 
-Secret key sohbete yazılmamalı, ekran görüntüsüyle paylaşılmamalı ve depoya konmamalıdır.
+Bu ekranın yayımlanan route tarafından gerçekten okunabildiği §4.9'da ölçülerek doğrulandı.
 
 ### 11.4 Sonrası
 
-Anahtarlar tanımlandığı bilgisi geldiğinde yeni önizleme oluşturulacak ve şunlar doğrulanacak:
+"İkisini de ekledim" bilgisi geldiğinde (≤ 60 sn içinde etkili olur) doğrulanacak:
 geçerli gönderimin kaydedilmesi, eksik/geçersiz doğrulamada kayıt oluşmaması, bildirim
-aktivasyonunun üretilmesi. Kodda değişiklik gerekmiyor.
+aktivasyonunun üretilmesi. Kodda değişiklik ve yeni dağıtım gerekmiyor.
