@@ -27,7 +27,8 @@ Tanıtım sitesi projesi. Kaynak tasarım tek, kendi kendine yeten bir HTML dosy
 - [İş Paketi 2c — Spam, PENDING, Yayın Durumu, Bildirim](docs/05-spam-korumasi-pending-yayin-ve-bildirim.md)
 - [İş Paketi 2d — CAPTCHA Uyumsuzluğu ve Düzeltme](docs/06-captcha-uyumsuzlugu-ve-duzeltme.md)
 - [İş Paketi 2e — Resmî Form Bileşeni ve Sunucu Tarafı Koruma](docs/07-resmi-form-bileseni-incelemesi.md) ⚠️ *kota tanımı düzeltildi*
-- [İş Paketi 3 — Ücretli Paket Kararı ve Yol Karşılaştırması](docs/08-ucretli-paket-karari-ve-yol-karsilastirmasi.md) ← **güncel durum**
+- [İş Paketi 3 — Ücretli Paket Kararı ve Yol Karşılaştırması](docs/08-ucretli-paket-karari-ve-yol-karsilastirmasi.md)
+- [İş Paketi 3b — Premium Doğrulama ve Doğrudan Erişim Açığı](docs/09-premium-dogrulama-ve-dogrudan-erisim.md) ← **güncel durum**
 
 ## Testi çalıştırma
 
