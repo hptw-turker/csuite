@@ -668,6 +668,12 @@
   const WIX_CLIENT_ID="2909f5b9-3dce-4e1a-b91f-728e47938e4e";
   const WIX_FORM_ID="a5807409-660c-47c4-8a66-6cf43f5086d3";
   let _vt=null,_vtExp=0;
+  const VT_KEY='csuite_vt';
+  // Ziyaretçi token'i tarayicida saklanir ki visitorId sabit kalsin ve Wix Forms'un
+  // sunucu tarafi submissionLimitPerUser kurali gercekten bagli olsun. Bu token
+  // herkese acik bir ziyaretci token'idir; gizli anahtar degildir.
+  try{ const c=JSON.parse(localStorage.getItem(VT_KEY)||'null');
+       if(c && c.t && c.e>Date.now()){ _vt=c.t; _vtExp=c.e; } }catch(e){}
   async function getVisitorToken(){
     if(_vt && Date.now()<_vtExp) return _vt;
     const r=await fetch("https://www.wixapis.com/oauth2/token",{method:"POST",
@@ -676,6 +682,7 @@
     if(!r.ok) throw new Error("token");
     const d=await r.json();
     _vt=d.access_token; _vtExp=Date.now()+((d.expires_in||14400)-60)*1000;
+    try{ localStorage.setItem(VT_KEY,JSON.stringify({t:_vt,e:_vtExp})); }catch(e){}
     return _vt;
   }
 
@@ -773,7 +780,8 @@
       const out=await res.json().catch(()=>null);
       if(!res.ok){
         const ae=(out&&out.details&&out.details.applicationError)||{};
-        const e=new Error('http'); e.ref=res.status+(ae.code?('/'+ae.code):''); throw e;
+        const e=new Error('http'); e.ref=res.status+(ae.code?('/'+ae.code):'');
+        e.wix=ae.code||''; throw e;
       }
       const sub=out&&out.submission?out.submission:null;
       if(sub&&sub.id){
@@ -803,7 +811,11 @@
     }catch(err){
       msg.className='formmsg err';
       const ref=(err&&err.ref)?(' <span style="opacity:.65">(Hata ref: '+err.ref+')</span>'):'';
-      msg.innerHTML='Gönderim sırasında bir sorun oluştu. Bilgileriniz formda duruyor — lütfen tekrar deneyin veya <a href="mailto:info@c-suite.com.tr" style="color:#f3b9bf;text-decoration:underline">info@c-suite.com.tr</a> adresine yazın.'+ref;
+      if(err && err.wix==='PER_USER_SUBMISSION_LIMIT_EXCEEDED'){
+        msg.innerHTML='Bu tarayıcıdan gönderebileceğiniz talep sayısına ulaştınız. Bilgileriniz formda duruyor — lütfen doğrudan <a href="mailto:info@c-suite.com.tr" style="color:#f3b9bf;text-decoration:underline">info@c-suite.com.tr</a> adresine yazın.'+ref;
+      }else{
+        msg.innerHTML='Gönderim sırasında bir sorun oluştu. Bilgileriniz formda duruyor — lütfen tekrar deneyin veya <a href="mailto:info@c-suite.com.tr" style="color:#f3b9bf;text-decoration:underline">info@c-suite.com.tr</a> adresine yazın.'+ref;
+      }
       btnText.textContent=original;
       btn.disabled=false;          // alanlar korunur, yeniden deneme açık
     }
