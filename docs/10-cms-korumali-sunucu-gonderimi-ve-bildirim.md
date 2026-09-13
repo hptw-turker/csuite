@@ -348,7 +348,77 @@ Diğer uçlar: `GET /api/talep` → **405**, honeypot dolu → **400 `REJECTED`*
 - Ek CRM entegrasyonu kurulmadı; üyelik, kullanıcı paneli, ödeme, aday havuzu eklenmedi.
 - Eski TEST kayıtları silinmedi.
 
-## 11. Kurulumu tamamlamak için gereken tek adım
+## 11. Gerçek sağlayıcı anahtarlarıyla canlı doğrulama (13 Eylül 2026, 13:25–13:40 UTC)
+
+Ürün sahibi reCAPTCHA anahtarlarını **Wix Secrets Manager**'a ekledi. Aşağıdakilerin tamamı,
+yayımlanan önizleme `zbhson-csuite-headless-csuite04-0f08.wix-site-host.com` üzerinde,
+**yeniden dağıtım yapılmadan** ölçüldü.
+
+### 11.1 Yapılandırma
+
+```
+GET /api/talep-config
+{"captcha":{"provider":"recaptcha-v3","action":"talep","siteKey":"…"},
+ "yapilandirma":{"siteKey":"secrets-manager","secret":"secrets-manager"}}
+```
+
+İki anahtar da **Secrets Manager**'dan okunuyor (ortam değişkeninden değil). Gizli değer
+hiçbir çıktıya yazılmadı; yalnızca kaynak bilgisi döndü.
+
+### 11.2 Gerçek gönderim kabul edildi
+
+Ürün sahibinin tarayıcıdan yaptığı İşveren gönderimi CMS'te bulundu:
+
+| Alan | Değer |
+|---|---|
+| Kayıt no | `f07a18f4-7e56-4936-887c-123f3e0b1b81` |
+| Tarih | `2026-09-13T13:25:57Z` |
+| Taraf | **İşveren** |
+| Etiket (mesaj) | `CSUITE-TEST-FINAL-0913-K482` |
+| Kaynak | `web` |
+| **captchaDogrulandi** | **true** |
+| gonderenOzet | var (ham IP saklanmıyor) |
+
+`captchaDogrulandi: true` yalnızca şu denetimlerin **hepsi** geçtiğinde yazılır:
+`success` + `action === 'talep'` + `hostname` = bu önizlemenin tam konak adı +
+`challenge_ts` ≤ 2 dk + `score` ≥ 0.5. Yani bu, **gerçek sağlayıcı doğrulamasıdır** —
+test anahtarı ya da taklit yanıt değil.
+
+### 11.3 Negatif testler — gerçek anahtarlar kuruluyken
+
+Ürün sahibinin gönderiminden sonra, aynı yayımlanan uca:
+
+| Deneme | Yanıt | CMS kaydı |
+|---|---|---|
+| `captchaToken` yok | **403 `CAPTCHA`** | yok |
+| Uydurma `captchaToken` (gerçek siteverify çağrısı yapıldı) | **403 `CAPTCHA`** | yok |
+| Honeypot dolu | **400 `REJECTED`** | yok |
+| Eksik/geçersiz alanlar | **400 `VALIDATION`** | yok |
+
+Dört etiketin de CMS'te araması **0 kayıt** döndü; koleksiyon toplamı **24**'te kaldı.
+
+### 11.4 Bildirim aktivasyonu
+
+Otomasyon `b727e976-205b-4d68-b004-8eaf16c8f95b` — **"C-suite · Yeni görüşme talebi (CMS)"**,
+durum **ACTIVE**, `createdBy.appId = 2909f5b9-…`, eylem `triggered-emails`.
+Ürün sahibinin kaydının verisiyle çalıştırıldı ve gerçek bir aktivasyon üretildi:
+`activationId = 14fbf74b-9a80-4e26-9715-3c4db964517b`.
+
+> **Sınır:** Bu bir **aktivasyon**tır, e-posta **teslimatı değildir**; ayrıca ürün sahibinin
+> kendi gönderiminin aktivasyon ürettiği geriye dönük doğrulanamaz, çünkü route'un
+> döndürdüğü `notified` değeri kayda yazılmıyor. Kayda `bildirimAktivasyonId` eklemek
+> mümkündür; bu, yeni bir dağıtım (dolayısıyla yeni önizleme adresi) gerektirir.
+
+### 11.5 Doğrulama nasıl yapıldı
+
+Yayımlanan önizlemeye **hiçbir tanı ucu eklenmedi ve yeniden dağıtım yapılmadı** — böylece
+Google'a kaydedilen konak adı değişmedi. CMS ve otomasyon okumaları, `wix dev` ile çalıştırılan
+**yerel** geliştirme sunucusundaki, yalnızca `import.meta.env.DEV` altında çalışan geçici
+uçlarla yapıldı; bu uçlar doğrulamadan sonra silindi. Yerel geliştirme için çekilen kimlik
+bilgileri `.env.local`'den geri alındı; reCAPTCHA gizli değeri hiçbir aşamada okunmadı ve
+diskte bırakılmadı.
+
+## 12. Kurulum adımı (tamamlandı)
 
 ### 11.1 Araç erişimi değerlendirildi
 
