@@ -418,7 +418,85 @@ uçlarla yapıldı; bu uçlar doğrulamadan sonra silindi. Yerel geliştirme iç
 bilgileri `.env.local`'den geri alındı; reCAPTCHA gizli değeri hiçbir aşamada okunmadı ve
 diskte bırakılmadı.
 
-## 12. Kurulum adımı (tamamlandı)
+## 12. Bildirim e-postasının gitmemesi — kök neden ve düzeltme (13 Eylül 2026, 14:00 UTC)
+
+### 12.1 Belirti
+
+Aktivasyonlar kabul ediliyordu (`activationId` dolu geliyordu) ama `csuite04@gmail.com`
+kutusuna e-posta düşmüyordu. **Aktivasyon kabulü, e-posta gönderimi değildir.**
+
+### 12.2 Aktivasyon sonucu okunabiliyor mu
+
+Hayır. Aktivasyonun eylem sonucunu döndüren herkese açık bir uç bulunamadı; denenen sekiz
+aday yol (`/automations/v1/activations/*`, `/automations-service/v2/activations/*`,
+activity-log varyantları) **404** döndürdü. Yalnızca `RerunActivation` belgelenmiş.
+Bu yüzden tanı, yapılandırma üzerinden yapıldı.
+
+### 12.3 Kök neden
+
+`triggered-emails` eyleminin **çağrı (invoke) şeması** resmî eylem kataloğundan okundu
+(`POST /v1/actions/resolve`, app `135c3d92-…`). Şemanın kabul ettiği alanlar:
+
+```
+sendToUnsubscribed, transactional, uniqueRuleId, dynamicParams, templateId,
+disabledAttachments, senderDetailsId, contactId, messageId, notificationTopicId
+```
+
+- **`contactId` → "The id of the contact to receive the mail"** — alıcıyı belirleyen alan budur.
+- **`selectedAudience` şemada YOKTUR.** O, otomasyon düzenleyicisinin arayüz verisidir;
+  eylemi çağırırken kullanılmaz.
+
+Otomasyonu Wix Forms otomasyonundan kopyalarken `contactId` alınmamıştı (Forms onu
+`{{var("contactId")}}` ile kendi tetikleyici yükünden dolduruyordu; bizim tetikleyicimizde
+böyle bir değişken yok). Sonuç: **eylem çalıştı ama alıcısı yoktu → e-posta üretilmedi.**
+Şablon tarafında sorun yoktu: kampanya `5e6485f3-…` **ACTIVE**, tür `AUTOMATION`,
+yayımlanma 09:33:13Z.
+
+### 12.4 Düzeltme (dağıtım gerektirmedi)
+
+Otomasyon `b727e976-…` eyleminin `inputMapping` alanına eklendi (revizyon 3 → 4):
+
+| Alan | Değer |
+|---|---|
+| `contactId` | `d90c4b1d-a3b8-4285-a2c4-f1273bc6d846` — **csuite04@gmail.com** kişisi (Contacts API ile bulundu, yeni kişi oluşturulmadı) |
+| `uniqueRuleId` | yeni UUID (istatistik toplama alanı; şemanın alternatif zorunlusu) |
+| `transactional` | `true` |
+| `sendToUnsubscribed` | `true` — kişinin abonelik durumu boş olduğu için gönderimi engellemesin |
+
+Kod değişmedi, yeni önizleme alınmadı; bu yüzden **Google'a kaydedilen konak adı aynı kaldı.**
+
+### 12.5 E-postanın gerçek konusu
+
+Kampanyanın konu satırı **otomasyonun adı değildir**:
+
+```
+emailSubject = "${formName} got a new submission"
+```
+
+Yani konu, route'un gönderdiği `formName` değerinden üretilir. Konu metni bu API yüzeyinden
+değiştirilemiyor (kampanya güncelleme uçları 404); değiştirilmesi gerekirse panodan yapılır.
+
+### 12.6 Kontrollü test (tek sefer)
+
+| | |
+|---|---|
+| Gönderim zamanı | **2026-09-13 14:03:51 UTC** |
+| Aktivasyon | `d1eaa990-1b2e-4e29-8b65-890a08c437b5` |
+| Alıcı | **csuite04@gmail.com** (kişi `d90c4b1d-…`) |
+| Beklenen konu | `C-suite · Yeni görüşme talebi (İşveren) · CSUITE-BILDIRIM-TEST-0913-N1 got a new submission` |
+| Gövdeye konan etiket | `CSUITE-BILDIRIM-TEST-0913-N1` (ilk alan olarak) |
+
+Etiket hem konuya (`formName` üzerinden) hem gövdeye (`submissions[0]`) konuldu; böylece
+şablonun gövdedeki alan listesini gerçekten işleyip işlemediği de görülebilir.
+
+### 12.7 Açık kalan
+
+Form route'unun bildirimi **kendiliğinden** tetiklediği, elle çalıştırmadan ayrı olarak
+doğrulanacak: gerçek bir form gönderimi sonrası e-postanın gelmesi tek geçerli kanıttır.
+Route, otomasyonu aynı `run-automation` çağrısıyla tetikliyor; düzeltme otomasyon
+yapılandırmasında olduğu için kodda değişiklik gerekmedi.
+
+## 13. Kurulum adımı (tamamlandı)
 
 ### 11.1 Araç erişimi değerlendirildi
 
