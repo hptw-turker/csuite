@@ -568,7 +568,80 @@ kişiye adreslendi.
   yani gerekirse sunucu route'u bu kanalı anonim yolu açmadan kullanabilir.
 - CMS, CAPTCHA, tasarım ve yayımlanan önizleme **değişmedi**; yeni dağıtım yapılmadı.
 
-## 14. Kurulum adımı (tamamlandı)
+## 14. Bildirim: Wix Email Transmissions API'ye geçiş (13 Eylül 2026, 14:50 UTC)
+
+### 14.1 Neden bu yöntem
+
+Doğrudan test e-postasının ulaştığı doğrulandıktan sonra, kalıcı mekanizma olarak
+**belgelenmiş işlemsel e-posta ucu** seçildi:
+
+```
+POST https://www.wixapis.com/email-transmissions/v1/email-transmissions/send
+```
+
+- Alıcı **doğrudan e-posta adresiyle** verilir (`toRecipients[].emailAddress`).
+  Kişi (contact) çözümlemesi yoktur — teslimatı engelleyen katman buydu.
+- Konu ve HTML gövde tamamen bizim denetimimizde.
+- `type: TRANSACTIONAL` → abonelik onayı aranmaz, abonelikten çık bağlantısı eklenmez.
+- `senderEmailAddress` verilmez → Wix'in doğrulanmış paylaşımlı adresi kullanılır
+  (`no-reply@wixsitemail.com`); ayrıca gönderici doğrulaması gerekmez. `replyTo` talebi
+  gönderen kişiye ayarlanır.
+- `idempotencyKey` = CMS kayıt no'su → bir kayıt için en fazla bir e-posta.
+- Yanıt, sağlayıcı işlem kimliğini (`id`) ve durumu döndürür.
+
+**Send Test ucu kalıcı mekanizma olarak kullanılmıyor**; yalnızca kanalın açık olduğunu
+kanıtlamak için bir kez kullanılmıştı.
+
+### 14.2 Bildirimin içeriği
+
+- **Konu:** `C-suite · Yeni görüşme talebi — <İşveren|Aday> · <Ad Soyad>`
+- **Gövde:** taraf, ad soyad, şirket/mevcut kurum, e-posta, telefon, mesaj +
+  **CMS koleksiyonu bağlantısı** + CMS kayıt no.
+- **Alıcı:** `csuite04@gmail.com`
+
+### 14.3 Kayıt ile bildirimin ayrılması
+
+Bildirim, CMS kaydı **başarıyla oluştuktan sonra** tetiklenir ve ayrı `try/catch` içindedir:
+başarısız olursa kullanıcıya hata gösterilmez ve tekrar göndermeye yönlendirilmez.
+
+Sonuç kayda yazılır (yeni alanlar koleksiyon şemasına eklendi, izinler ADMIN olarak korundu):
+
+| Alan | Anlamı |
+|---|---|
+| `bildirimKabul` | E-posta servisi isteği **kabul etti** mi (kuyruğa aldı mı) |
+| `bildirimDurumu` | Sağlayıcı durumu (`ACCEPTED` / `HTTP_4xx` / `GONDERILEMEDI`) |
+| `bildirimIslemId` | **Sağlayıcı işlem kimliği** (transmission GUID) |
+| `bildirimZamani` | Denemenin zamanı (ISO) |
+
+**Kabul ≠ teslimat.** Uç kuyruğa alındığında `ACCEPTED` döner; işlendiğinde `PROCESSED`
+(alıcı başına `SENT`/`FAILED`) veya `REJECTED` olur. Kayıttaki alan bu yüzden "kabul"
+olarak adlandırılmıştır; teslimat, işlem kimliğiyle
+`GET /email-transmissions/v1/email-transmissions/{id}` üzerinden ayrıca sorgulanır.
+
+### 14.4 Mekanizmanın doğrulanması (dağıtımdan önce)
+
+Yeni uç bir kez, açık etiketli bir doğrulama e-postasıyla denendi:
+
+| | |
+|---|---|
+| Zaman | **2026-09-13 14:53:33 UTC** |
+| İşlem kimliği | `1396467f-58a1-4012-971b-453a642a287c` |
+| Alıcı | `csuite04@gmail.com` |
+| Konu | `C-suite · Yeni görüşme talebi — İşveren · CSUITE-MAIL-0913-T5` |
+| Sağlayıcı durumu | **`PROCESSED`** · alıcı **`SENT`** · `failureReason: NONE` |
+
+### 14.5 Yeni önizleme
+
+Kod değiştiği için yeni bir önizleme alındı:
+**`jcdxsg-csuite-headless-csuite04-0f08.wix-site-host.com`**
+Bu tam konak adının Google reCAPTCHA anahtarının **Domains** listesine eklenmesi gerekir.
+
+Dağıtım sonrası doğrulandı: `/api/talep-config` iki anahtarı da **secrets-manager**'dan
+okuyor; sayfa baytları yerel dosyayla aynı; tanı uçları yok (hepsi 404); CAPTCHA'sız gönderim
+**403** ile reddediliyor. CMS izinleri, tasarım ve eski formun **devre dışı** durumu korundu.
+Kullanılmayan iki otomasyon (`7bc07c88-…`, `b727e976-…`) **INACTIVE** bırakıldı.
+
+## 15. Kurulum adımı (tamamlandı)
 
 ### 11.1 Araç erişimi değerlendirildi
 

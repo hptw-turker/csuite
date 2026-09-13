@@ -226,8 +226,9 @@ export const POST: APIRoute = async ({ request }) => {
 
   // 5) kalıcı kayıt
   let itemId = '';
+  let created: unknown = null;
   try {
-    const created = await auth.elevate(items.insert)(COLLECTION, {
+    created = await auth.elevate(items.insert)(COLLECTION, {
       ...data,
       // Görüntülenen e-posta kullanıcının yazdığı gibi kalır; sınır karşılaştırması
       // büyük/küçük harften bağımsız olsun diye normalleştirilmiş kopya ayrıca tutulur.
@@ -242,63 +243,110 @@ export const POST: APIRoute = async ({ request }) => {
     return json({ error: 'STORE_FAILED' }, 502);
   }
 
-  // 6) bildirim — kayıttan BAĞIMSIZ ele alınır. Bildirim başarısız olsa bile
-  //    kullanıcıya gönderim hatası gösterilmez; aksi hâlde mükerrer kayıt oluşur.
-  let notified = false;
+  // 6) bildirim — kayıttan BAĞIMSIZ ele alınır. Bildirim başarısız olsa bile kullanıcıya
+  //    gönderim hatası gösterilmez ve tekrar göndermeye yönlendirilmez; talep zaten kayıtlı.
+  let sonuc: NotifySonuc = { kabul: false, islemId: '', durum: 'GONDERILEMEDI' };
   try {
-    notified = await notify(data, itemId);
+    sonuc = await notify(data, itemId);
   } catch {
-    notified = false;
+    sonuc = { kabul: false, islemId: '', durum: 'GONDERILEMEDI' };
   }
 
-  return json({ ok: true, id: itemId, notified }, 200);
+  // Sonucu kayda yaz. "Kabul", e-posta servisinin isteği kuyruğa aldığını gösterir;
+  // TESLİMAT anlamına GELMEZ. Bu yazma başarısız olsa bile yanıt değişmez.
+  try {
+    await auth.elevate(items.update)(COLLECTION, {
+      ...(created as Record<string, unknown>),
+      bildirimKabul: sonuc.kabul,
+      bildirimDurumu: sonuc.durum,
+      bildirimIslemId: sonuc.islemId,
+      bildirimZamani: new Date().toISOString(),
+    });
+  } catch {
+    /* kayıt zaten var; bildirim alanları yazılamazsa sessiz geçilir */
+  }
+
+  return json({ ok: true, id: itemId, notified: sonuc.kabul }, 200);
 };
 
 /**
- * Site sahibine bildirim — Wix Automations.
+ * Site sahibine bildirim — **Wix Email Transmissions API** (belgelenmiş, işlemsel e-posta).
  *
- * Otomasyon: "C-suite · Yeni görüşme talebi (CMS)"  (id: NOTIFY_AUTOMATION_ID)
- *   • bu sitenin uygulaması tarafından oluşturuldu,
- *   • eylemi, daha önce çalışan bildirimle aynı olan tetiklenmiş e-posta eylemidir;
- *     alıcı kitle "site katkıda bulunanları" (site sahibi) rolüdür,
- *   • sunucu route'u onu Run Automation ile doğrudan çalıştırır.
+ *   POST https://www.wixapis.com/email-transmissions/v1/email-transmissions/send
  *
- * Bu çağrı kayıttan BAĞIMSIZDIR: başarısız olsa bile kullanıcıya hata gösterilmez.
+ * Neden bu yöntem:
+ *  - Alıcı **doğrudan e-posta adresiyle** verilir; kişi (contact) çözümlemesine bağlı değildir.
+ *    Otomasyon/tetiklenmiş e-posta yolunda alıcı tetikleyici bağlamından çözülüyordu ve
+ *    var olmayan bir kişiye düşüyordu; bu uçta böyle bir ara katman yok.
+ *  - Konu ve HTML gövde tamamen bizim denetimimizde.
+ *  - `type: TRANSACTIONAL` → abonelik onayı aranmaz, abonelikten çık bağlantısı eklenmez.
+ *  - `senderEmailAddress` verilmez: Wix'in doğrulanmış paylaşımlı adresi kullanılır
+ *    (`no-reply@wixsitemail.com`), böylece ayrıca gönderici doğrulaması gerekmez.
+ *  - `idempotencyKey` olarak CMS kayıt no'su kullanılır → bir kayıt için en fazla bir e-posta.
+ *  - Yanıt `id` (sağlayıcı işlem kimliği) ve `status` döndürür.
+ *
+ * **Kabul ≠ teslimat.** Uç, kuyruğa alındığında `ACCEPTED` döner; işlenince `PROCESSED`
+ * (alıcı başına `SENT`/`FAILED`) ya da `REJECTED` olur. Kayda yazılan alan bu yüzden
+ * "kabul" olarak adlandırılır.
  */
-const NOTIFY_AUTOMATION_ID = 'b727e976-205b-4d68-b004-8eaf16c8f95b';
+const NOTIFY_TO = 'csuite04@gmail.com';
+const DASHBOARD_SITE_ID = '72b257e3-0db0-4579-8795-64e51b3f42a6';
 
-async function notify(data: Record<string, string>, itemId: string): Promise<boolean> {
-  const siteId = (await gizliOku('WIX_SITE_ID')).deger || '72b257e3-0db0-4579-8795-64e51b3f42a6';
-  const kayitBaglantisi = `https://manage.wix.com/dashboard/${siteId}/database/data/${COLLECTION}`;
+const esc = (v: string) =>
+  v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-  const submissions = [
-    { label: 'Taraf', value: data.taraf },
-    { label: 'Ad Soyad', value: data.adSoyad },
-    { label: data.taraf === 'Aday' ? 'Mevcut Kurum' : 'Şirket', value: data.sirket },
-    { label: 'E-posta', value: data.eposta },
-    { label: 'Telefon', value: data.telefon || '-' },
-    { label: 'Mesaj', value: data.mesaj },
-    { label: 'CMS kayıt no', value: itemId },
-  ];
+function bildirimHtml(data: Record<string, string>, itemId: string, link: string): string {
+  const satir = (k: string, v: string) =>
+    `<tr><td style="padding:6px 12px 6px 0;color:#6b6460;white-space:nowrap;vertical-align:top">${esc(k)}</td>` +
+    `<td style="padding:6px 0;color:#1A130F"><b>${esc(v)}</b></td></tr>`;
+  const sirketEtiketi = data.taraf === 'Aday' ? 'Mevcut kurum' : 'Şirket';
+  return [
+    '<div style="font-family:Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;color:#1A130F">',
+    `<p style="margin:0 0 14px">C-suite web sitesinden <b>${esc(data.taraf)}</b> tarafında yeni bir görüşme talebi geldi.</p>`,
+    '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 16px">',
+    satir('Taraf', data.taraf),
+    satir('Ad Soyad', data.adSoyad),
+    satir(sirketEtiketi, data.sirket),
+    satir('E-posta', data.eposta),
+    satir('Telefon', data.telefon || '-'),
+    '</table>',
+    '<p style="margin:0 0 6px;color:#6b6460">Mesaj</p>',
+    `<p style="margin:0 0 18px;white-space:pre-wrap">${esc(data.mesaj)}</p>`,
+    `<p style="margin:0 0 6px"><a href="${esc(link)}" style="color:#CF051E">CMS kaydını aç</a></p>`,
+    `<p style="margin:0;color:#8a827d;font-size:13px">CMS kayıt no: ${esc(itemId)}</p>`,
+    '</div>',
+  ].join('');
+}
 
+type NotifySonuc = { kabul: boolean; islemId: string; durum: string };
+
+async function notify(data: Record<string, string>, itemId: string): Promise<NotifySonuc> {
+  const link = `https://manage.wix.com/dashboard/${DASHBOARD_SITE_ID}/database/data/${COLLECTION}`;
   const elevatedFetch = auth.elevate(httpClient.fetchWithAuth);
-  const r = await elevatedFetch('https://www.wixapis.com/automations/v1/events/run-automation', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      identifierType: 'AUTOMATION',
-      automationIdentifier: { automationId: NOTIFY_AUTOMATION_ID },
-      payload: {
-        formName: `C-suite · Görüşme talebi (${data.taraf})`,
-        submissionsLink: kayitBaglantisi,
-        submissions,
-      },
-    }),
-  });
-  if (!r.ok) return false;
-  // Boş activationId, otomasyonun gerçekte çalışmadığı anlamına gelir (ölçüldü).
-  const out = (await r.json()) as { activationId?: string };
-  return Boolean(out?.activationId);
+  const r = await elevatedFetch(
+    'https://www.wixapis.com/email-transmissions/v1/email-transmissions/send',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        emailTransmission: {
+          emailSubject: `C-suite · Yeni görüşme talebi — ${data.taraf} · ${data.adSoyad}`,
+          emailHtmlContent: bildirimHtml(data, itemId, link),
+          senderName: 'C-suite web sitesi',
+          replyTo: { emailAddress: data.eposta, name: data.adSoyad.slice(0, 50) },
+          toRecipients: [{ emailAddress: NOTIFY_TO, name: 'C-suite' }],
+          type: 'TRANSACTIONAL',
+          metadata: { taraf: data.taraf === 'Aday' ? 'Aday' : 'Isveren', kanal: 'web' },
+        },
+        // Kayıt no GUID biçiminde; aynı kayıt için tekrar denense bile ikinci e-posta gitmez.
+        idempotencyKey: itemId,
+      }),
+    },
+  );
+  if (!r.ok) return { kabul: false, islemId: '', durum: `HTTP_${r.status}` };
+  const out = (await r.json()) as { emailTransmission?: { id?: string; status?: string } };
+  const t = out?.emailTransmission;
+  return { kabul: Boolean(t?.id), islemId: t?.id ?? '', durum: t?.status ?? 'UNKNOWN' };
 }
 
 export const GET: APIRoute = async () => json({ error: 'METHOD_NOT_ALLOWED' }, 405);
