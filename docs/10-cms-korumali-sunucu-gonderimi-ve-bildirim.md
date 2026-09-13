@@ -496,7 +496,79 @@ doğrulanacak: gerçek bir form gönderimi sonrası e-postanın gelmesi tek geç
 Route, otomasyonu aynı `run-automation` çağrısıyla tetikliyor; düzeltme otomasyon
 yapılandırmasında olduğu için kodda değişiklik gerekmedi.
 
-## 13. Kurulum adımı (tamamlandı)
+## 13. Bildirim teslimatı — ikinci tur teşhis (13 Eylül 2026, 14:20–14:45 UTC)
+
+### 13.1 Önceki kök neden açıklaması geri çekiliyor
+
+"Eylem çalıştı, alıcısı olmadığı için e-posta üretilmedi" **kanıtlanmış bir nedensellik
+değildi**; elimdeki tek kanıt `contactId` alanının eksik olmasıydı. Alan eklendikten sonra da
+teslimat olmadı. Aşağıdaki ölçümler gerçek nedeni gösteriyor.
+
+### 13.2 Belgelenmiş uçlarla yapılan kontroller
+
+| Kontrol | Uç (resmî dokümandan) | Sonuç |
+|---|---|---|
+| E-posta kotası | `GET /email-marketing/v1/account-details` | Paket **Free200**, aylık 200 e-posta, **kullanım 0** — kota dolu değil |
+| Gönderici ayrıntıları | `GET /sender-details/v1/sender-details` | **boş liste** — tanımlı gönderici yok |
+| Gönderici e-postaları | `GET /sender-emails/v1/sender-emails` | **boş liste** — doğrulanmış "gönderen" adresi yok |
+| Alıcı kişi | `GET /contacts/v4/contacts/{id}` | `csuite04@gmail.com`, **birincil**, tam eşleşme |
+| Abonelik durumu | aynı yanıt | **tanımsız (boş)** — *abonelikten çıkılmış değil*; ayrıca `sendToUnsubscribed: true` |
+| Geri dönme / şikâyet | kampanya istatistikleri | `bounced: 0`, `complained: 0`, `notSent: 0` |
+| Şablon | `GET /email-marketing/v1/campaigns/{id}` | **ACTIVE**, tür `AUTOMATION`, yayımlanmış |
+
+### 13.3 Ayırt edici teşhis: kampanya istatistikleri
+
+`GET /email-marketing/v1/campaigns/statistics?campaignIds=…` ve
+`…/statistics/recipients?activity=…` ile ölçüldü:
+
+- **`run-automation` ile üretilen beş aktivasyonun hiçbiri** e-posta servisinde iz bırakmadı:
+  `delivered`, `bounced`, `notSent` hiç değişmedi. Yani **eylem hiç çalışmadı** — aktivasyon
+  kabul edilip düşüyor. Bu, otomasyonun tetikleyici anahtarının kayıtlı olmamasıyla
+  (`ValidateAutomation` → `TRIGGER_NOT_FOUND`) tutarlı.
+- Buna karşılık **Wix Forms tetikleyicisiyle** yapılan gönderimler her seferinde ~9 saniye
+  içinde teslimat kaydı üretti: **12:18:19Z, 14:36:03Z, 14:39:09Z**.
+
+**Yani e-posta zinciri çalışıyor; çalışmayan şey, kayıtlı olmayan özel tetikleyiciyle
+çağrılan otomasyondu.**
+
+### 13.4 Yeni bulgu: alıcı kişi mevcut değil
+
+Kampanyanın **tek** teslimat alıcısı `413c042d-3638-3b27-a626-6a5107c83d0f`.
+`GET /contacts/v4/contacts/413c042d-…` → **404 `CONTACT_NOT_FOUND`**.
+Yani tetiklenen e-postalar **var olmayan bir kişiye** adresleniyor; hiçbir gerçek gelen
+kutusuna ulaşmıyor. Forms otomasyonunun `contactId` alanını site sahibinin gerçek kişisine
+(literal `d90c4b1d-…`) çevirmek bunu **değiştirmedi**: 14:39 teslimatı yine aynı var olmayan
+kişiye gitti. Alıcı, eylemin `inputMapping` alanından değil, tetikleyici bağlamından
+çözülüyor ve burada bozuk çözülüyor.
+
+### 13.5 Kişiden bağımsız, belgelenmiş gönderim yolu
+
+`POST /email-marketing/v1/campaigns/{campaignId}/test` (**Send Test**) alıcıyı
+`toEmailAddress` ile **doğrudan** alır — kişi çözümlemesi yoktur — ve konu satırı
+`emailSubject` ile verilebilir.
+
+### 13.6 Bu turda gönderilen e-postalar (üçü de kayıt altında)
+
+| Zaman (UTC) | Yol | Alıcı | Konu | Sağlayıcı yanıtı |
+|---|---|---|---|---|
+| 14:34:22 | **Send Test** (kişiden bağımsız) | `csuite04@gmail.com` (doğrudan adres) | `C-suite bildirim kanali testi — CSUITE-MAIL-0913-T2` | **HTTP 200**, gövde `{}` (belgelenen `SendTestResponse` boştur) |
+| 14:35:50 | Forms tetikleyicisi | var olmayan kişi `413c042d-…` | `C-suite · Görüşme Talebi got a new submission` | teslimat kaydı 14:36:03Z |
+| 14:39:00 | Forms tetikleyicisi | var olmayan kişi `413c042d-…` | aynı | teslimat kaydı 14:39:09Z |
+
+Yalnızca **ilk satırdaki** e-postanın gelen kutusuna ulaşması beklenir; diğer ikisi var olmayan
+kişiye adreslendi.
+
+### 13.7 Dinlenme durumu
+
+- Forms otomasyonu `7bc07c88-…`: `contactId` özgün hâline (`{{var("contactId")}}`) geri alındı,
+  durum **INACTIVE** (sürpriz e-posta üretmesin).
+- Özel tetikleyicili otomasyon `b727e976-…`: durum **INACTIVE** (hiç çalışmıyor).
+- Form `a5807409-…`: **devre dışı kalmaya devam ediyor** — anonim gönderim hâlâ reddediliyor.
+  Ölçüldü: form devre dışıyken bile **uygulama kimliğiyle** gönderim HTTP 200 veriyor;
+  yani gerekirse sunucu route'u bu kanalı anonim yolu açmadan kullanabilir.
+- CMS, CAPTCHA, tasarım ve yayımlanan önizleme **değişmedi**; yeni dağıtım yapılmadı.
+
+## 14. Kurulum adımı (tamamlandı)
 
 ### 11.1 Araç erişimi değerlendirildi
 
