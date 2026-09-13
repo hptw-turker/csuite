@@ -1,0 +1,21 @@
+{
+  "name": "csuite-astro",
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@wix/astro": "^2.72.0",
+    "@wix/cli": "^1.1.245",
+    "@wix/data": "^1.0.521",
+    "@wix/essentials": "^1.0.15",
+    "@wix/sdk": "^1.21.16",
+    "astro": "^5.18.2"
+  },
+  "devDependencies": {
+    "@wix/astro-wix-hosting-adapter": "^2.0.0"
+  }
+}

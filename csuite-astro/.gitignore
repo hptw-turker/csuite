@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.astro/
+.wix/
+.env
+.env.local
+.env.*.local
+wix-error.log
