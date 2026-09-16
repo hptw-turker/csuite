@@ -1093,3 +1093,32 @@ olmadan bu adrese gelen e-postalar teslim edilemez. Bu kayıtlar tarafımızca
 silinmedi/değiştirilmedi — ölçüm anında zaten yoktu. Alan adına ait e-posta
 kullanılacaksa sağlayıcının MX/SPF/DKIM/DMARC değerleri aynı panelden eklenmeli.
 Form bildirimleri bundan etkilenmez: bildirim `csuite04@gmail.com` adresine gidiyor.
+
+### 21.5 Sertifika bekleme turları ve kesinleştirici ölçüm (16 Eylül 2026)
+
+| Saat (UTC) | `https://c-suite.com.tr/` | `https://www.c-suite.com.tr/` |
+|---|---|---|
+| 16:01 | TLS alert "internal error" | el sıkışma kapanıyor |
+| 16:49 | aynı | aynı |
+| 17:51 | aynı | aynı |
+
+**Bağlantının Wix tarafında tanındığı ölçülerek doğrulandı.** Aynı Wix IP'sine
+(`185.230.63.107`) bilinmeyen bir konak adıyla gidildiğinde kenar sunucu bağlantıyı
+reddediyor; `c-suite.com.tr` ile gidildiğinde ise HTTPS'e yönlendiriyor:
+
+```
+Host: bilinmeyen-deneme-xyz.example → 403  x-deny-reason: resolve_no_records
+Host: c-suite.com.tr                → 301  location: https://c-suite.com.tr/
+```
+
+Yani alan adı Wix kenarında **kayıtlı**; eksik olan tek şey TLS sertifikası.
+Wix belgeleri bağlantının etkili olmasının **48 saate kadar** sürebileceğini
+söylüyor (`connected-domains/introduction`). Bağlantı için sitenin aktif Premium
+planı olması şartı da aynı belgede; yukarıdaki 301/403 farkı bu şartın karşılandığını
+dolaylı olarak gösteriyor (aksi hâlde kenar sunucu alan adını hiç tanımazdı).
+
+Wix CLI'da alan adı durumu sorgulayacak komut yok (`wix account domain` yalnızca
+`suggest` ve `checkout-link` sunuyor; satın alma kullanılmadı). REST'teki
+`GET /domains/v1/connected-domains` çağrısı `wix-account-id` başlığı istiyor;
+CLI'ın ürettiği jeton bu kimliği içermiyor ve hesap kimliğini veren uç noktalar
+bu jetona kapalı (403/404). Bu yüzden durum, dışarıdan HTTPS ölçümüyle izleniyor.
