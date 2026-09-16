@@ -1030,3 +1030,66 @@ CAPTCHA yapılandırması, Secrets Manager, CMS izinleri, form alanları ve zoru
 işaretleri, taraf bilgisi, `/api/talep` sözleşmesi, gönderim sınırı ve otomatik
 e-posta mekanizması bu turda **değiştirilmedi**. Alan adı satın alma, bağlama, DNS ve
 ad sunucusu işlemleri **beklemede**; hiçbiri yapılmadı.
+
+## 21. c-suite.com.tr DNS yönlendirmesi — doğrulama (16 Eylül 2026, 16:00 UTC)
+
+Alan adı sahibi (kullanıcı) IHS panelinden DNS kayıtlarını girdi. Bu bölüm yalnızca
+**ölçüm** kaydıdır; bu turda hiçbir DNS/ad sunucusu ayarı tarafımızca değiştirilmedi.
+
+### 21.1 DNS bölgesi artık cevap veriyor
+
+13 Eylül'de bölge `SERVFAIL` dönüyordu. 16 Eylül ölçümü (DNS-over-HTTPS, Cloudflare):
+
+| Sorgu | Sonuç | Beklenen (Wix setup-info, §17) | Durum |
+|---|---|---|---|
+| `NS c-suite.com.tr` | `dijkstra.ihsdns.com`, `knuth.ihsdns.com` | — | bölge yayında (SOA serial 2026091600) |
+| `A c-suite.com.tr` | `185.230.63.107` | `185.230.63.107` | **birebir eşleşiyor** |
+| `CNAME www.c-suite.com.tr` | `pointing.wixdns.net` | `pointing.wixdns.net` | **birebir eşleşiyor** |
+| `A www.c-suite.com.tr` (zincir) | `cdn1.wixdns.net` → `34.149.87.45` | — | Wix kenarına çözülüyor |
+
+Wix tarafındaki bağlantı kaydı §17'de kurulmuştu ve duruyor:
+`connectedDomain{id: c-suite.com.tr, connectionType: POINTING, siteInfo.id:
+72b257e3-…, assignmentType: PRIMARY}`.
+
+### 21.2 Trafik Wix'e ulaşıyor, HTTPS sertifikası henüz yok
+
+```
+http://c-suite.com.tr/      → 301  location: https://c-suite.com.tr/   (x-seen-by: Wix)
+http://www.c-suite.com.tr/  → 301  location: https://www.c-suite.com.tr/ (x-wix-request-id: …)
+https://c-suite.com.tr/     → TLS alert "internal error" (sertifika yok)
+https://www.c-suite.com.tr/ → TLS el sıkışması kapanıyor (sertifika yok)
+```
+
+Yani ad çözümleme ve yönlendirme **doğru**; eksik olan tek şey Wix'in bu alan adı için
+otomatik ürettiği **SSL sertifikası**. Bu adım Wix tarafında kendiliğinden tamamlanır ve
+DNS yayıldıktan sonra zaman alır. Bizim tarafımızda yapılacak bir işlem yok.
+
+Mevcut production adresi etkilenmedi: `https://csuite-headless-csuite04-0f08.wix-site-host.com/`
+hâlâ 200 ve depodaki `public/index.html` ile bayt bayt aynı.
+
+### 21.3 Kod tarafında değişiklik gerekmiyor
+
+`hostAllowed()` (talep.ts) izin listesini **isteğin kendi `Host` başlığı + RECAPTCHA_ALLOWED_HOSTS**
+olarak kuruyor. `c-suite.com.tr` üzerinden gelen bir istekte `Host = c-suite.com.tr` olacağı ve
+Google `siteverify` aynı konak adını döneceği için eşleşme kendiliğinden sağlanır.
+`www` için de aynısı geçerli. **Ortak Wix ana alan adı hiçbir yere eklenmedi.**
+
+Tek dış bağımlılık: Google reCAPTCHA yönetim konsolunda site anahtarının **Domains**
+listesinde `c-suite.com.tr` bulunmalı. Konsola erişimimiz yok; bu, yeni alan adında
+yapılacak tek TEST gönderimiyle **ölçülerek** doğrulanacak (sertifika çıktıktan sonra).
+
+### 21.4 E-posta kayıtları — bulgu
+
+Bölgede **MX, SPF (TXT) ve DMARC kaydı yok**:
+
+```
+MX    c-suite.com.tr        → cevap yok (yalnızca SOA)
+TXT   c-suite.com.tr        → cevap yok
+TXT   _dmarc.c-suite.com.tr → NXDOMAIN
+```
+
+Sayfa `info@c-suite.com.tr` adresini iletişim adresi olarak yayımlıyor. MX kaydı
+olmadan bu adrese gelen e-postalar teslim edilemez. Bu kayıtlar tarafımızca
+silinmedi/değiştirilmedi — ölçüm anında zaten yoktu. Alan adına ait e-posta
+kullanılacaksa sağlayıcının MX/SPF/DKIM/DMARC değerleri aynı panelden eklenmeli.
+Form bildirimleri bundan etkilenmez: bildirim `csuite04@gmail.com` adresine gidiyor.
