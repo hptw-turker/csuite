@@ -1106,6 +1106,7 @@ Form bildirimleri bundan etkilenmez: bildirim `csuite04@gmail.com` adresine gidi
 | 23:50 | aynı | aynı |
 | 17 Eyl 02:52 | aynı | aynı |
 | 17 Eyl 06:24 | aynı | aynı |
+| 17 Eyl 09:55 | aynı | aynı |
 
 **Bağlantının Wix tarafında tanındığı ölçülerek doğrulandı.** Aynı Wix IP'sine
 (`185.230.63.107`) bilinmeyen bir konak adıyla gidildiğinde kenar sunucu bağlantıyı
@@ -1127,3 +1128,7 @@ Wix CLI'da alan adı durumu sorgulayacak komut yok (`wix account domain` yalnız
 `GET /domains/v1/connected-domains` çağrısı `wix-account-id` başlığı istiyor;
 CLI'ın ürettiği jeton bu kimliği içermiyor ve hesap kimliğini veren uç noktalar
 bu jetona kapalı (403/404). Bu yüzden durum, dışarıdan HTTPS ölçümüyle izleniyor.
+
+DNS'in yayıldığı an (16 Eylül ~16:00 UTC) esas alındığında Wix'in belgelediği
+**48 saatlik sınır 18 Eylül 16:00 UTC**'de doluyor. Bu saate kadar sertifika
+çıkmazsa Wix Domains desteğine başvurmak gerekir.
