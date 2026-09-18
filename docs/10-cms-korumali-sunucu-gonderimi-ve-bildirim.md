@@ -1112,6 +1112,7 @@ Form bildirimleri bundan etkilenmez: bildirim `csuite04@gmail.com` adresine gidi
 | 17 Eyl 23:02 | aynı | aynı |
 | 18 Eyl 04:03 | aynı | aynı |
 | 18 Eyl 09:06 | aynı | aynı |
+| **18 Eyl 16:37** | **301 → www (sertifika ÇIKTI)** | **200 (sertifika ÇIKTI)** |
 
 **Bağlantının Wix tarafında tanındığı ölçülerek doğrulandı.** Aynı Wix IP'sine
 (`185.230.63.107`) bilinmeyen bir konak adıyla gidildiğinde kenar sunucu bağlantıyı
@@ -1137,3 +1138,81 @@ bu jetona kapalı (403/404). Bu yüzden durum, dışarıdan HTTPS ölçümüyle 
 DNS'in yayıldığı an (16 Eylül ~16:00 UTC) esas alındığında Wix'in belgelediği
 **48 saatlik sınır 18 Eylül 16:00 UTC**'de doluyor. Bu saate kadar sertifika
 çıkmazsa Wix Domains desteğine başvurmak gerekir.
+
+## 22. c-suite.com.tr yayında (18 Eylül 2026, 16:37–16:45 UTC)
+
+### 22.1 Sertifika ve adresler
+
+Wix sertifikayı üretti; bağlantı tamamlandı.
+
+```
+https://www.c-suite.com.tr/                       → 200, TLS doğrulandı
+https://c-suite.com.tr/                           → 301 → https://www.c-suite.com.tr/
+http://c-suite.com.tr/ , http://www.c-suite.com.tr/ → 301 → HTTPS
+https://csuite-headless-csuite04-0f08.wix-site-host.com/ → 301 → https://www.c-suite.com.tr/
+```
+
+Sertifika: `CN=c-suite.com.tr`, SAN `www.c-suite.com.tr`, veren **Let's Encrypt**,
+geçerlilik sonu **17 Aralık 2026**. Wix bunu otomatik yeniler.
+
+Canlı sayfa depodaki `public/index.html` ile **bayt bayt aynı** (79 074 bayt, `cmp`).
+Eski wix-site-host adresi artık yeni alan adına yönleniyor — kısa bağlantı olarak
+çalışmaya devam ediyor.
+
+### 22.2 Görünüm doğrulaması (yeni alan adında)
+
+`tools/canli-kontrol.mjs` ile `https://www.c-suite.com.tr/` üzerinde, masaüstü
+1440×900 ve mobil 390×844, İşveren ve Aday, sekmeler emp→cand→emp→hedef gezilerek:
+
+| Ölçüm | mas./İşv. | mas./Aday | mob./İşv. | mob./Aday |
+|---|---|---|---|---|
+| Diğer tarafın metni (bayat) | yok | yok | yok | yok |
+| Üst düğme etiketi | Ön Görüşme Planlayın | Gizli Görüşme Planlayın | Ön Görüşme Planlayın | Gizli Görüşme Planlayın |
+| 01-02-03 rengi | beyaz | beyaz | beyaz | beyaz |
+| Sabit mobil CTA | yok | yok | yok | yok |
+| Yatay taşma / kırpılma | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| Menü formu örtüyor mu | hayır | hayır | hayır | hayır |
+| İlk alanlar + gönder düğmesi | görünür | görünür | görünür | görünür |
+| reCAPTCHA yüklendi | evet | evet | evet | evet |
+| JS hatası | 0 | 0 | 0 | 0 |
+
+Kart, adım ve tablo metinleri dört görünümde de belgelerdeki hâliyle eşleşiyor.
+
+### 22.3 Form gönderimi — ölçülen sonuç ve doğrulanamayan kısım
+
+Yeni alan adında tek, açıkça TEST etiketli gönderim denendi. **Sunucu reddetti:**
+
+```
+/api/talep → 403 {"error":"CAPTCHA","ref":"6c0b38af"}
+```
+
+Sebebi varsayım bırakmamak için ölçüldü: gerçek tarayıcıda `www.c-suite.com.tr`
+üzerinde üretilen token, yerel `wix dev` altındaki **geçici** bir tanı route'uyla
+doğrudan Google'a doğrulatıldı (route sonradan silindi; canlıda `/api/gecici-captcha`
+→ **404**). Google'ın ham yanıtı:
+
+```json
+{ "success": true, "hostname": "www.c-suite.com.tr", "action": "talep", "score": 0.1 }
+```
+
+Buradan çıkanlar:
+
++ **Alan adı reCAPTCHA tarafında kabul ediliyor.** `success: true` ve
+  `hostname: www.c-suite.com.tr` → Google konsolunda ek bir alan adı tanımı
+  gerekmiyor. Sunucudaki konak adı ve `action` denetimleri de geçiyor.
++ **Reddin tek sebebi puan:** `score 0.1`, eşik `0.5`. reCAPTCHA v3 otomatik
+  (headless) tarayıcıları düşük puanlar. İki ayrı ölçümde de 0.1 geldi.
++ Dolayısıyla **form gönderimi bu ortamdan uçtan uca doğrulanamıyor**: red,
+  korumanın doğru çalıştığını gösteriyor; gerçek bir ziyaretçinin gönderiminin
+  geçeceğini ya da geçmeyeceğini **kanıtlamıyor**. Bu adım doğrulanmış sayılmadı.
++ Eşik düşürülmedi, test anahtarı kullanılmadı, doğrulama atlanmadı.
+
+16 Eylül'de aynı otomatik istemci eşiği geçebilmişti (kayıt `f8c58fe9-…`,
+`captchaDogrulandi: true`); puan istemciye ve zamana göre değişiyor. Kod, anahtarlar
+ve akış o günden beri değişmedi.
+
+### 22.4 Dokunulmayanlar
+
+DNS ve ad sunucusu ayarlarına bu turda da dokunulmadı; alan adı satın alınmadı.
+CAPTCHA eşiği, Secrets Manager, CMS izinleri, form alanları, gönderim sınırı ve
+otomatik e-posta mekanizması değiştirilmedi. Mevcut TEST kayıtları silinmedi.
