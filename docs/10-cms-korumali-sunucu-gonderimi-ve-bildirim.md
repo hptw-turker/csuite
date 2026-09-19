@@ -1310,3 +1310,41 @@ bu veri merkezi ortamını taban puanla işaretliyor. Eşik düşürülmedi, tes
 anahtarı kullanılmadı, doğrulama atlanmadı. Bu adım **başarılı sayılmamıştır**;
 yukarıdaki dört alıcı sonucu, formun kendi CAPTCHA kapısından geçilerek değil,
 yayımlanan bildirim fonksiyonu doğrudan çalıştırılarak elde edilmiştir.
+
+## 24. Alıcı listesi beş adrese genişletildi (19 Eylül 2026, 11:55–12:00 UTC)
+
+Yalnızca `NOTIFY_TO` dizisi büyütüldü; bildirim mekanizmasının kendisi (alıcı
+başına ayrı işlem, alıcı bazlı mükerrer koruması, hata yalıtımı, sonuç kaydı,
+`replyTo`) değişmedi. Toplam başarı hesabı dizinin uzunluğundan türediği için
+kendiliğinden **5/5** oldu.
+
+Etkin alıcılar:
+
+1. musa.tekler@isvecozum.com.tr *(korundu)*
+2. turker@happyplacetowork.com.tr *(korundu)*
+3. meltem.bayraktar@isvecozum.com.tr *(yeni)*
+4. basak.gullapoglu@isvecozum.com.tr *(yeni)*
+5. zeynep.yarar@isvecozum.com.tr *(yeni)*
+
+`csuite04@gmail.com` alıcı değil. Derlenen pakette (`dist/_worker.js/pages/api/
+talep.astro.mjs`) tam olarak bu beş adres var ve `csuite04@gmail.com` geçmiyor.
+`tekBildirim` de dışa açıldı (yalnızca doğrulanabilirlik için; Astro HTTP adı
+olmayan export'ları uç nokta saymaz, davranış değişmez).
+
+### 24.1 Yeni üç adresin sağlayıcı sonucu
+
+Yayımlanan `tekBildirim()` fonksiyonunun kendisi, yerel `wix dev` altındaki
+geçici bir route'tan yalnızca yeni üç adres için çalıştırıldı (route sonradan
+silindi). Mevcut iki alıcıya test e-postası gönderilmedi.
+
+| Alıcı | İşlem no | Genel | Alıcı | Hata |
+|---|---|---|---|---|
+| meltem.bayraktar@isvecozum.com.tr | `0e4e6b29-6763-479a-a578-cf504dcc7afd` | PROCESSED | SENT | NONE |
+| basak.gullapoglu@isvecozum.com.tr | `9bfbc06c-e3cf-469f-9e3f-f42d02a6335f` | PROCESSED | SENT | NONE |
+| zeynep.yarar@isvecozum.com.tr | `73fa67ca-1577-4ebf-ad8a-d1784b56654d` | PROCESSED | SENT | NONE |
+
+Bu, **sağlayıcı tarafındaki kabul ve çıkışa verme durumudur**; gelen kutusuna
+teslim anlamına gelmez ve form üzerinden uçtan uca test değildir.
+
+CAPTCHA, form, tasarım, CMS izinleri ve DNS ayarları değiştirilmedi; eski gerçek
+talepler yeniden gönderilmedi.

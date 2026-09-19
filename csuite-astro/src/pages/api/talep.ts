@@ -323,6 +323,9 @@ export const POST: APIRoute = async ({ request }) => {
 const NOTIFY_TO = [
   'musa.tekler@isvecozum.com.tr',
   'turker@happyplacetowork.com.tr',
+  'meltem.bayraktar@isvecozum.com.tr',
+  'basak.gullapoglu@isvecozum.com.tr',
+  'zeynep.yarar@isvecozum.com.tr',
 ] as const;
 const DASHBOARD_SITE_ID = '72b257e3-0db0-4579-8795-64e51b3f42a6';
 
@@ -391,7 +394,7 @@ async function idemAnahtar(itemId: string, alici: string): Promise<string> {
 }
 
 /** Tek alıcıya bildirim. Hiçbir koşulda dışarı hata atmaz; sonucu döner. */
-async function tekBildirim(
+export async function tekBildirim(
   data: Record<string, string>,
   itemId: string,
   tarih: string,
