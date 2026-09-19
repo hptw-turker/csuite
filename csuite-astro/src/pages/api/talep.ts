@@ -255,11 +255,12 @@ const postHandler = async (request: Request): Promise<Response> => {
 
   // 6) bildirim — kayıttan BAĞIMSIZ ele alınır. Bildirim başarısız olsa bile kullanıcıya
   //    gönderim hatası gösterilmez ve tekrar göndermeye yönlendirilmez; talep zaten kayıtlı.
-  let sonuc: NotifySonuc = { kabul: false, islemId: '', durum: 'GONDERILEMEDI' };
+  const tarih = okunurTarih((created as { _createdDate?: unknown })?._createdDate);
+  let sonuc: NotifySonuc = { kabul: false, islemId: '', durum: 'GONDERILEMEDI', alicilar: [] };
   try {
-    sonuc = await notify(data, itemId);
+    sonuc = await notify(data, itemId, tarih);
   } catch {
-    sonuc = { kabul: false, islemId: '', durum: 'GONDERILEMEDI' };
+    sonuc = { kabul: false, islemId: '', durum: 'GONDERILEMEDI', alicilar: [] };
   }
 
   // Sonucu kayda yaz. "Kabul", e-posta servisinin isteği kuyruğa aldığını gösterir;
@@ -270,6 +271,10 @@ const postHandler = async (request: Request): Promise<Response> => {
       bildirimKabul: sonuc.kabul,
       bildirimDurumu: sonuc.durum,
       bildirimIslemId: sonuc.islemId,
+      // Alıcı kırılımı: her adresin kendi durumu ve işlem kimliği ayrı izlenebilsin.
+      bildirimAlicilari: sonuc.alicilar
+        .map((a) => `${a.alici}=${a.durum}${a.islemId ? '#' + a.islemId : ''}`)
+        .join(' | '),
       bildirimZamani: new Date().toISOString(),
     });
   } catch {
@@ -313,13 +318,37 @@ export const POST: APIRoute = async ({ request }) => {
  * (alıcı başına `SENT`/`FAILED`) ya da `REJECTED` olur. Kayda yazılan alan bu yüzden
  * "kabul" olarak adlandırılır.
  */
-const NOTIFY_TO = 'csuite04@gmail.com';
+// Bildirim alıcıları. Her alıcıya AYRI bir e-posta işlemi açılır: böylece birinin
+// başarısızlığı diğerini engellemez ve her biri ayrı izlenebilir.
+const NOTIFY_TO = [
+  'musa.tekler@isvecozum.com.tr',
+  'turker@happyplacetowork.com.tr',
+] as const;
 const DASHBOARD_SITE_ID = '72b257e3-0db0-4579-8795-64e51b3f42a6';
+
+/** Kayıt tarihini bildirimde okunur biçimde gösterir (İstanbul saati). */
+function okunurTarih(v: unknown): string {
+  const ham = v instanceof Date ? v : new Date(String(v ?? ''));
+  // Kayıt tarihi okunamazsa bildirim tarihsiz kalmasın; şimdiki zamana düşülür.
+  const d = Number.isFinite(ham.getTime()) ? ham : new Date();
+  try {
+    return new Intl.DateTimeFormat('tr-TR', {
+      dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Istanbul',
+    }).format(d);
+  } catch {
+    return d.toISOString();
+  }
+}
 
 const esc = (v: string) =>
   v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-function bildirimHtml(data: Record<string, string>, itemId: string, link: string): string {
+function bildirimHtml(
+  data: Record<string, string>,
+  itemId: string,
+  tarih: string,
+  link: string,
+): string {
   const satir = (k: string, v: string) =>
     `<tr><td style="padding:6px 12px 6px 0;color:#6b6460;white-space:nowrap;vertical-align:top">${esc(k)}</td>` +
     `<td style="padding:6px 0;color:#1A130F"><b>${esc(v)}</b></td></tr>`;
@@ -337,40 +366,98 @@ function bildirimHtml(data: Record<string, string>, itemId: string, link: string
     '<p style="margin:0 0 6px;color:#6b6460">Mesaj</p>',
     `<p style="margin:0 0 18px;white-space:pre-wrap">${esc(data.mesaj)}</p>`,
     `<p style="margin:0 0 6px"><a href="${esc(link)}" style="color:#CF051E">CMS kaydını aç</a></p>`,
+    `<p style="margin:0;color:#8a827d;font-size:13px">Kayıt tarihi: ${esc(tarih)}</p>`,
     `<p style="margin:0;color:#8a827d;font-size:13px">CMS kayıt no: ${esc(itemId)}</p>`,
     '</div>',
   ].join('');
 }
 
-type NotifySonuc = { kabul: boolean; islemId: string; durum: string };
+type AliciSonuc = { alici: string; kabul: boolean; islemId: string; durum: string };
+type NotifySonuc = { kabul: boolean; islemId: string; durum: string; alicilar: AliciSonuc[] };
 
-async function notify(data: Record<string, string>, itemId: string): Promise<NotifySonuc> {
-  const link = `https://manage.wix.com/dashboard/${DASHBOARD_SITE_ID}/database/data/${COLLECTION}`;
-  const elevatedFetch = auth.elevate(httpClient.fetchWithAuth);
-  const r = await elevatedFetch(
-    'https://www.wixapis.com/email-transmissions/v1/email-transmissions/send',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        emailTransmission: {
-          emailSubject: `C-suite · Yeni görüşme talebi — ${data.taraf} · ${data.adSoyad}`,
-          emailHtmlContent: bildirimHtml(data, itemId, link),
-          senderName: 'C-suite web sitesi',
-          replyTo: { emailAddress: data.eposta, name: data.adSoyad.slice(0, 50) },
-          toRecipients: [{ emailAddress: NOTIFY_TO, name: 'C-suite' }],
-          type: 'TRANSACTIONAL',
-          metadata: { taraf: data.taraf === 'Aday' ? 'Aday' : 'Isveren', kanal: 'web' },
-        },
-        // Kayıt no GUID biçiminde; aynı kayıt için tekrar denense bile ikinci e-posta gitmez.
-        idempotencyKey: itemId,
-      }),
-    },
+/**
+ * Aynı kayıt + aynı alıcı için her zaman AYNI anahtarı üretir. Böylece bir yeniden
+ * deneme ikinci e-postayı doğurmaz; farklı alıcılar ise birbirinin anahtarını
+ * tutmaz. Sağlayıcı GUID biçimi beklediği için RFC 4122 v5 kalıbına oturtulur.
+ */
+async function idemAnahtar(itemId: string, alici: string): Promise<string> {
+  const ozet = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${itemId}|${alici.toLowerCase()}`)),
   );
-  if (!r.ok) return { kabul: false, islemId: '', durum: `HTTP_${r.status}` };
-  const out = (await r.json()) as { emailTransmission?: { id?: string; status?: string } };
-  const t = out?.emailTransmission;
-  return { kabul: Boolean(t?.id), islemId: t?.id ?? '', durum: t?.status ?? 'UNKNOWN' };
+  ozet[6] = (ozet[6] & 0x0f) | 0x50; // sürüm 5
+  ozet[8] = (ozet[8] & 0x3f) | 0x80; // RFC 4122 varyantı
+  const h = [...ozet.slice(0, 16)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
+/** Tek alıcıya bildirim. Hiçbir koşulda dışarı hata atmaz; sonucu döner. */
+async function tekBildirim(
+  data: Record<string, string>,
+  itemId: string,
+  tarih: string,
+  link: string,
+  alici: string,
+): Promise<AliciSonuc> {
+  try {
+    const elevatedFetch = auth.elevate(httpClient.fetchWithAuth);
+    const r = await elevatedFetch(
+      'https://www.wixapis.com/email-transmissions/v1/email-transmissions/send',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          emailTransmission: {
+            emailSubject: `C-suite · Yeni görüşme talebi — ${data.taraf} · ${data.adSoyad}`,
+            emailHtmlContent: bildirimHtml(data, itemId, tarih, link),
+            senderName: 'C-suite web sitesi',
+            replyTo: { emailAddress: data.eposta, name: data.adSoyad.slice(0, 50) },
+            toRecipients: [{ emailAddress: alici, name: 'C-suite' }],
+            type: 'TRANSACTIONAL',
+            metadata: { taraf: data.taraf === 'Aday' ? 'Aday' : 'Isveren', kanal: 'web' },
+          },
+          idempotencyKey: await idemAnahtar(itemId, alici),
+        }),
+      },
+    );
+    // 409 = aynı kayıt+alıcı için bu e-posta zaten gönderilmiş (mükerrer koruması
+    // devreye girdi). Bu bir hata değil; "gönderildi" olarak kaydedilir, yoksa
+    // yeniden deneme kaydın bildirim durumunu yanlışlıkla başarısıza çevirir.
+    if (r.status === 409) return { alici, kabul: true, islemId: '', durum: 'ZATEN_GONDERILDI' };
+    if (!r.ok) return { alici, kabul: false, islemId: '', durum: `HTTP_${r.status}` };
+    const out = (await r.json()) as { emailTransmission?: { id?: string; status?: string } };
+    const t = out?.emailTransmission;
+    return { alici, kabul: Boolean(t?.id), islemId: t?.id ?? '', durum: t?.status ?? 'UNKNOWN' };
+  } catch {
+    return { alici, kabul: false, islemId: '', durum: 'GONDERILEMEDI' };
+  }
+}
+
+/**
+ * Tüm alıcılara bildirim. Alıcılar birbirinden bağımsızdır: biri başarısız olsa da
+ * diğerine gönderim yine denenir ve her birinin durumu ayrı ayrı döner.
+ *
+ * Dışa açık: yayımlanan kodun aynısı doğrulamada da çağrılabilsin diye. Astro
+ * yalnızca GET/POST gibi HTTP adlarını uç nokta sayar; bu export yeni bir adres
+ * açmaz, çalışma zamanı davranışını değiştirmez ve hiçbir denetimi gevşetmez.
+ */
+export async function notify(
+  data: Record<string, string>,
+  itemId: string,
+  tarih: string,
+): Promise<NotifySonuc> {
+  const link = `https://manage.wix.com/dashboard/${DASHBOARD_SITE_ID}/database/data/${COLLECTION}`;
+  const alicilar = await Promise.all(
+    NOTIFY_TO.map((alici) => tekBildirim(data, itemId, tarih, link, alici)),
+  );
+  const kabulEden = alicilar.filter((a) => a.kabul);
+  const hatalar = alicilar.filter((a) => !a.kabul).map((a) => a.durum);
+  return {
+    // Kısmi başarı da görünür olsun diye "kabul" ancak TÜM alıcılar kabul edilince true.
+    kabul: kabulEden.length === alicilar.length,
+    islemId: alicilar.map((a) => a.islemId).filter(Boolean).join(','),
+    durum: `${kabulEden.length}/${alicilar.length} kabul` + (hatalar.length ? ` (${hatalar.join(', ')})` : ''),
+    alicilar,
+  };
 }
 
 export const GET: APIRoute = async () => hata('METHOD_NOT_ALLOWED', 405);

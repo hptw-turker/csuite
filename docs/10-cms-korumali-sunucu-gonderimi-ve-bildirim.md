@@ -1216,3 +1216,97 @@ ve akış o günden beri değişmedi.
 DNS ve ad sunucusu ayarlarına bu turda da dokunulmadı; alan adı satın alınmadı.
 CAPTCHA eşiği, Secrets Manager, CMS izinleri, form alanları, gönderim sınırı ve
 otomatik e-posta mekanizması değiştirilmedi. Mevcut TEST kayıtları silinmedi.
+
+## 23. Bildirim alıcıları iki adrese taşındı (19 Eylül 2026, 10:50–11:20 UTC)
+
+### 23.1 Doğrulanan neden — alıcı listesi, form veya CAPTCHA değil
+
+Kullanıcının canlı sitede doldurduğu gerçek form **kaydoldu ve bildirimi gönderildi**:
+
+| | |
+|---|---|
+| CMS kayıt no | `4ec71035-4414-4ff0-aa66-f33e14cdfd2f` |
+| Tarih | 2026-09-19T10:41:46Z |
+| Taraf / Ad | İşveren · Türker Bas |
+| `captchaDogrulandi` | `true` |
+| Bildirim işlemi | `a1399c41-1a3a-48a3-b2e0-ef566d52deeb` |
+| Sağlayıcı durumu | `PROCESSED` · alıcı `csuite04@gmail.com` → `SENT`, `failureReason: NONE` |
+
+Yani form, CAPTCHA, CMS ve bildirim zinciri **çalışıyordu**. Tek alıcı
+`csuite04@gmail.com` olarak sabitliydi; bildirim beklenen kutulara hiç
+gönderilmemişti. Neden yalnızca alıcı adresine bakılarak varsayılmadı: kaydın
+varlığı, CAPTCHA alanı ve sağlayıcı işleminin gerçek durumu tek tek okundu.
+
+Bu kayıt ayrıca 18 Eylül'de açık kalan soruyu da kapatıyor: **gerçek bir
+ziyaretçinin gönderimi canlı sitede CAPTCHA'yı geçiyor.**
+
+### 23.2 Yapılan değişiklik
+
+`src/pages/api/talep.ts`:
+
++ `NOTIFY_TO` artık iki adresli bir dizi: `musa.tekler@isvecozum.com.tr`,
+  `turker@happyplacetowork.com.tr`. `csuite04@gmail.com` alıcılıktan çıktı.
++ Her alıcıya **ayrı bir e-posta işlemi** açılıyor (`tekBildirim`), hepsi paralel.
+  Bir alıcının hatası diğerini engellemiyor; her biri kendi `try/catch` içinde.
++ Mükerrer koruması alıcı bazında: `idempotencyKey`, `SHA-256(kayıtNo|alıcı)`
+  değerinden RFC 4122 v5 kalıbına oturtularak türetiliyor. Aynı kayıt+alıcı için
+  anahtar hep aynı, farklı alıcılar için farklı.
++ Sağlayıcının **409 `ALREADY_EXECUTED`** yanıtı hata değil, `ZATEN_GONDERILDI`
+  olarak kaydediliyor — yoksa bir yeniden deneme, gönderilmiş bildirimi kayıtta
+  başarısız gösteriyordu.
++ Kayda alıcı kırılımı yazılıyor: yeni `bildirimAlicilari` alanı
+  (`adres=DURUM#işlemNo | adres=DURUM#işlemNo`). `bildirimDurumu` artık
+  `2/2 kabul` biçiminde özet; `bildirimKabul` ancak **tüm** alıcılar kabul
+  edilirse `true` (kısmi başarı görünür kalsın diye).
++ E-posta gövdesine **kayıt tarihi** eklendi (İstanbul saati). Gövdede zaten
+  bulunan alanlar korundu: taraf, ad soyad, şirket/mevcut kurum, e-posta,
+  telefon, mesaj, CMS bağlantısı, kayıt no.
++ `replyTo` değişmedi: talep sahibinin e-posta adresi.
++ Telefon boşsa gövdede `-` yazılıyor, hata oluşmuyor.
++ `notify` dışa açıldı; Astro yalnızca HTTP adlarını uç nokta saydığı için bu
+  yeni adres açmaz ve davranışı değiştirmez.
+
+Tasarım, metinler, form alanları, CMS izinleri, gönderim sınırı, CAPTCHA eşiği
+ve DNS ayarları değiştirilmedi (`dist/index.html` ile `public/index.html` `cmp`
+ile aynı).
+
+### 23.3 Doğrulama
+
+Yayımlanan `notify()` fonksiyonunun kendisi, yerel `wix dev` altındaki geçici bir
+route'tan **gerçek Email Transmissions API'sine** karşı çalıştırıldı (route
+sonradan silindi; kayıt oluşturmaz, hiçbir denetimi atlamaz):
+
+| Taraf | Alıcı | İşlem no | Genel | Alıcı | Hata |
+|---|---|---|---|---|---|
+| İşveren | musa.tekler@isvecozum.com.tr | `4318e471-8937-4992-b523-578f0b31e6d1` | PROCESSED | SENT | NONE |
+| İşveren | turker@happyplacetowork.com.tr | `7a3d1652-90ee-40c9-b886-a2555e194743` | PROCESSED | SENT | NONE |
+| Aday | musa.tekler@isvecozum.com.tr | `86fd5200-ec8f-4cfc-91d6-4184239d020d` | PROCESSED | SENT | NONE |
+| Aday | turker@happyplacetowork.com.tr | `e4ba12d8-d53a-4f3f-af5a-41eac7c051c2` | PROCESSED | SENT | NONE |
+
+`PROCESSED`/`SENT` sağlayıcının işlemi alıp çıkışa verdiğini gösterir; **gelen
+kutusuna teslim anlamına gelmez.**
+
+Aday denemesinde telefon alanı bilerek boş bırakıldı — hata oluşmadı.
+Aynı kayıt+alıcı ikinci kez denendiğinde sağlayıcı 409 döndü, yeni e-posta
+gitmedi ve sonuç `ZATEN_GONDERILDI` olarak kaydedildi.
+
+Gönderilen gövde geri okundu; konu `C-suite · Yeni görüşme talebi — İşveren ·
+<ad>` ve gövde istenen tüm alanları içeriyor.
+
+### 23.4 Tamamlanamayan kontrol
+
+**Canlı sitede gerçek tarayıcıdan form gönderimi bu ortamdan yapılamadı.**
+`https://www.c-suite.com.tr/` üzerinde İşveren ve Aday için ayrı ayrı denendi;
+ikisi de `403 CAPTCHA` ile reddedildi. Sebep ölçüldü: token gerçek tarayıcıda
+üretilip Google'a doğrulatıldı →
+
+```json
+{ "success": true, "hostname": "www.c-suite.com.tr", "action": "talep", "score": 0.1 }
+```
+
+Eşik 0.5. Başsız olmayan (Xvfb), kalıcı profilli, tr-TR yerelli, kaydırma/fare/
+gecikmeli yazım içeren gerçekçi bir oturumla da puan 0.1'de kaldı — reCAPTCHA v3
+bu veri merkezi ortamını taban puanla işaretliyor. Eşik düşürülmedi, test
+anahtarı kullanılmadı, doğrulama atlanmadı. Bu adım **başarılı sayılmamıştır**;
+yukarıdaki dört alıcı sonucu, formun kendi CAPTCHA kapısından geçilerek değil,
+yayımlanan bildirim fonksiyonu doğrudan çalıştırılarak elde edilmiştir.
